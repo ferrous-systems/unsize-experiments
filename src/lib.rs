@@ -40,8 +40,13 @@ mod tests {
 
     #[test]
     fn arc_it() {
-        let slice: alloc::sync::Arc<[_]> = alloc::sync::Arc::new([10; 0]).coerce_unsized();
-        assert_eq!(&*slice, &[10; 0][..]);
+        let slice: alloc::sync::Arc<[_]> = alloc::sync::Arc::new([0; 10]).coerce_unsized();
+        assert_eq!(&*slice, &[0; 10][..]);
+    }
+
+    #[test]
+    fn static_unsize() {
+        let _: *const [_] = (&[0; 10] as *const [i32; 10]).coerce_unsized();
     }
 
     #[test]
