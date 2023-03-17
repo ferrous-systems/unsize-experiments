@@ -5,10 +5,41 @@ use core::ptr;
 use alloc::boxed::Box;
 
 use crate::unsize::Unsize;
-
+/// Trait that indicates that this is a pointer or a wrapper for one,
+/// where unsizing can be performed on the pointee.
+///
+/// See the [DST coercion RFC][dst-coerce] and [the nomicon entry on coercion][nomicon-coerce]
+/// for more details.
+///
+/// For builtin pointer types, pointers to `T` will coerce to pointers to `U` if `T: Unsize<U>`
+/// by converting from a thin pointer to a fat pointer.
+///
+/// For custom types, the coercion here works by coercing `Foo<T>` to `Foo<U>`
+/// provided an impl of `CoerceUnsized<Foo<U>> for Foo<T>` exists.
+/// Such an impl can only be written if `Foo<T>` has only a single non-phantomdata
+/// field involving `T`. If the type of that field is `Bar<T>`, an implementation
+/// of `CoerceUnsized<Bar<U>> for Bar<T>` must exist. The coercion will work by
+/// coercing the `Bar<T>` field into `Bar<U>` and filling in the rest of the fields
+/// from `Foo<T>` to create a `Foo<U>`. This will effectively drill down to a pointer
+/// field and coerce that.
+///
+/// Generally, for smart pointers you will implement
+/// `CoerceUnsized<Ptr<U>> for Ptr<T> where T: Unsize<U>, U: ?Sized`, with an
+/// optional `?Sized` bound on `T` itself. For wrapper types that directly embed `T`
+/// like `Cell<T>` and `RefCell<T>`, you
+/// can directly implement `CoerceUnsized<Wrap<U>> for Wrap<T> where T: CoerceUnsized<U>`.
+/// This will let coercions of types like `Cell<Box<T>>` work.
+///
+/// [`Unsize`][unsize] is used to mark types which can be coerced to DSTs if behind
+/// pointers. It is implemented automatically by the compiler.
+///
+/// [dst-coerce]: https://github.com/rust-lang/rfcs/blob/master/text/0982-dst-coercion.md
+/// [unsize]: crate::marker::Unsize
+/// [nomicon-coerce]: ../../nomicon/coercions.html
+// #[lang = "coerce_unsized"]
 pub trait CoerceUnsized<Target>
-// where // std has this bound for some reason?
-//     Target: ?Sized,
+// std has this bound for some reason, but it's technically not required for any coercions
+// where Target: ?Sized,
 {
     fn coerce_unsized(self) -> Target;
 }
@@ -16,10 +47,13 @@ pub trait CoerceUnsized<Target>
 // &mut T -> &mut U
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<&'a mut U> for &'a mut T {
     fn coerce_unsized(self) -> &'a mut U {
+        // SAFETY: the returned fat pointer must be valid according to [`Unsize`]
         unsafe {
             &mut *ptr::from_raw_parts_mut(
-                Unsize::data_address(self).cast_mut(),
-                Unsize::metadata(self),
+                // SAFETY: self is a reference
+                Unsize::target_data_address(self).cast_mut(),
+                // SAFETY: self is a reference
+                Unsize::target_metadata(self),
             )
         }
     }
@@ -28,7 +62,15 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<&'a mut U> for &'a mut 
 // &mut T -> &U
 impl<'a, 'b: 'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<&'a U> for &'b mut T {
     fn coerce_unsized(self) -> &'a U {
-        unsafe { &*ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self)) }
+        // SAFETY: the returned fat pointer must be valid according to [`Unsize`]
+        unsafe {
+            &*ptr::from_raw_parts(
+                // SAFETY: self is a reference
+                Unsize::target_data_address(self),
+                // SAFETY: self is a reference
+                Unsize::target_metadata(self),
+            )
+        }
     }
 }
 
@@ -36,8 +78,10 @@ impl<'a, 'b: 'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<&'a U> for &'b 
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for &'a mut T {
     fn coerce_unsized(self) -> *mut U {
         ptr::from_raw_parts_mut(
-            Unsize::data_address(self).cast_mut(),
-            Unsize::metadata(self),
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_data_address(self) }.cast_mut(),
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_metadata(self) },
         )
     }
 }
@@ -45,21 +89,41 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for &'a mut T {
 // &mut T -> *const U
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self))
+        ptr::from_raw_parts(
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_data_address(self) },
+            unsafe {
+                // SAFETY: self is a reference
+                Unsize::target_metadata(self)
+            },
+        )
     }
 }
 
 // &T -> &U
 impl<'a, 'b: 'a, T: Unsize<U> + ?Sized, U: ?Sized> CoerceUnsized<&'a U> for &'b T {
     fn coerce_unsized(self) -> &'a U {
-        unsafe { &*ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self)) }
+        // SAFETY: the returned fat pointer must be valid according to [`Unsize`]
+        unsafe {
+            &*ptr::from_raw_parts(
+                // SAFETY: self is a reference
+                Unsize::target_data_address(self),
+                // SAFETY: self is a reference
+                Unsize::target_metadata(self),
+            )
+        }
     }
 }
 
 // &T -> *const U
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self))
+        ptr::from_raw_parts(
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_data_address(self) },
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_metadata(self) },
+        )
     }
 }
 
@@ -67,8 +131,12 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
     fn coerce_unsized(self) -> *mut U {
         ptr::from_raw_parts_mut(
-            Unsize::data_address(self).cast_mut(),
-            Unsize::metadata(self),
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_data_address(self) }.cast_mut(),
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_metadata(self) },
         )
     }
 }
@@ -76,14 +144,28 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
 // *mut T -> *const U
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self))
+        ptr::from_raw_parts(
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_data_address(self) },
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_metadata(self) },
+        )
     }
 }
 
 // *const T -> *const U
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(Unsize::data_address(self), Unsize::metadata(self))
+        ptr::from_raw_parts(
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_data_address(self) },
+            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
+            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
+            unsafe { Unsize::target_metadata(self) },
+        )
     }
 }
 
@@ -91,11 +173,14 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
 impl<T: ?Sized + Unsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
     fn coerce_unsized(self) -> Box<U, A> {
         let (this, a) = Box::into_raw_with_allocator(self);
+        // SAFETY: According to [`Unsize`] the returned fat pointer is valid
         unsafe {
             Box::from_raw_in(
                 ptr::from_raw_parts_mut(
-                    Unsize::data_address(this).cast_mut(),
-                    Unsize::metadata(this),
+                    // SAFETY: this is derived from the box with is currently live
+                    Unsize::target_data_address(this).cast_mut(),
+                    // SAFETY: this is derived from the box with is currently live
+                    Unsize::target_metadata(this),
                 ),
                 a,
             )

@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(incomplete_features)]
+#![forbid(unsafe_op_in_unsafe_fn)]
 #![feature(
     ptr_metadata,
     arbitrary_self_types,
