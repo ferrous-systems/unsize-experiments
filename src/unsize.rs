@@ -19,26 +19,37 @@ use core::ptr::Pointee;
 /// types. See the [DST coercion RFC][RFC982] and [the nomicon entry on coercion][nomicon-coerce]
 /// for more details.
 ///
+/// # Safety
+///
+/// Implementations of this trait require the output of [`Unsize::metadata`] and [`Unsize::data_address`] to belong
+/// to the same object. In other words, creating a DST pointer out of these two outputs should result in a valid pointer.
+///
 /// [`ops::CoerceUnsized`]: crate::ops::CoerceUnsized
 /// [`Rc`]: ../../std/rc/struct.Rc.html
 /// [RFC982]: https://github.com/rust-lang/rfcs/blob/master/text/0982-dst-coercion.md
 /// [nomicon-coerce]: ../../nomicon/coercions.html
-/// SAFETY: Implementations of this trait require the output of [`Unsize::metadata`] and [`Unsize::data_address`] to belong
-/// to the same object. In other words, creating a DST pointer out of these two outputs should result in a valid pointer.
 // #[lang = "unsize"]
 pub unsafe trait Unsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
 {
-    /// SAFETY: `self` must point to a valid instance of `Self`
+    /// # Safety
+    ///
+    /// `self` must point to a valid instance of `Self`
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
-    /// SAFETY: `self` must point to a valid instance of `Self` and the returned value must point to a valid object.
+    /// # Safety
+    ///
+    /// `self` must point to a valid instance of `Self` and the returned value must point to a valid object.
+    // Note: This should effectively allow to field project (or return self) only.
     unsafe fn target_data_address(self: *const Self) -> *const ();
 }
 
 /// A type that can be unsized solely through compile time information
-/// SAFETY: The implementation of [`Unsize::target_data_address`] must return the input pointer.
+///
+/// # Safety
+///
+/// The implementation of [`Unsize::target_data_address`] must return the input pointer.
 pub unsafe trait StableUnsize<Target>: Unsize<Target>
 where
     // ideally this would be !Sized
@@ -47,14 +58,18 @@ where
 }
 
 /// A type that can be unsized solely through compile time information.
-/// SAFETY: The implementation of [`Unsize::target_data_address`] must return the input pointer.
-/// SAFETY: The implementation of [`Unsize::target_metadata`] must return the same as [`StaticUnsize::target_metadata`].
+///
+/// # Safety
+///
+/// The implementation of [`Unsize::target_data_address`] must return the input pointer.
+/// The implementation of [`Unsize::target_metadata`] must return the same as [`StaticUnsize::target_metadata`].
 #[const_trait]
 pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
 {
+    // This could probably be a `const`?
     fn target_metadata() -> <Target as Pointee>::Metadata;
 }
 
@@ -79,11 +94,11 @@ unsafe impl<T, const N: usize> const StaticUnsize<[T]> for [T; N] {
 /// SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
 unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
     unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
-        // Note, this would be `self.len`
+        // SAFETY: self is a valid pointer
         unsafe { (*self).len() }
     }
     unsafe fn target_data_address(self: *const Self) -> *const () {
-        // Note, this would be `self.buf.ptr.as_ptr().cast()`
+        // SAFETY: self is a valid pointer
         unsafe { (*self).as_ptr().cast() }
     }
 }

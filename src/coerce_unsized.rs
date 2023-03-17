@@ -6,7 +6,7 @@ use core::ptr;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
-use crate::unsize::{StableUnsize, Unsize};
+use crate::unsize::{StableUnsize, StaticUnsize, Unsize};
 /// Trait that indicates that this is a pointer or a wrapper for one,
 /// where unsizing can be performed on the pointee.
 ///
@@ -38,14 +38,15 @@ use crate::unsize::{StableUnsize, Unsize};
 /// [dst-coerce]: https://github.com/rust-lang/rfcs/blob/master/text/0982-dst-coercion.md
 /// [unsize]: crate::marker::Unsize
 /// [nomicon-coerce]: ../../nomicon/coercions.html
-// #[lang = "coerce_unsized"]
-pub trait CoerceUnsized<Target>
-// std has this bound for some reason, but it's technically not required for any coercions,
+// std has a `Target:?Sized` bound for some reason, but it's technically not required for any coercions,
 // since Target is supposed to be a pointer or wrapper to a pointer
-// where Target: ?Sized,
-{
+pub trait CoerceUnsized<Target> {
     fn coerce_unsized(self) -> Target;
 }
+
+/*
+ * Here are the primitive pointer impls from core
+ */
 
 // &mut T -> &mut U
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<&'a mut U> for &'a mut T {
@@ -131,44 +132,26 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
 }
 
 // *mut T -> *mut U
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
+// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
     fn coerce_unsized(self) -> *mut U {
-        ptr::from_raw_parts_mut(
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_data_address(self) }.cast_mut(),
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_metadata(self) },
-        )
+        ptr::from_raw_parts_mut(self.cast(), StaticUnsize::target_metadata())
     }
 }
 
 // *mut T -> *const U
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
+// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_data_address(self) },
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_metadata(self) },
-        )
+        ptr::from_raw_parts(self.cast(), StaticUnsize::target_metadata())
     }
 }
 
 // *const T -> *const U
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
+// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_data_address(self) },
-            // SAFETY: so, this is a fun one, this is not safe according to the definition of target_data_address!
-            // But with https://rust-lang.github.io/rfcs/3245-refined-impls.html we can actually define it as being safe
-            unsafe { Unsize::target_metadata(self) },
-        )
+        ptr::from_raw_parts(self.cast(), StaticUnsize::target_metadata())
     }
 }
 
@@ -177,16 +160,16 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
  */
 
 // Box<T> -> Box<U>
-impl<T: ?Sized + Unsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
+// Note the use of StableUnsize! unstable unsize would be unsound as arc relies on the data pointer pointing inside of the ArcInner.
+impl<T: ?Sized + StableUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
     fn coerce_unsized(self) -> Box<U, A> {
         let (this, a) = Box::into_raw_with_allocator(self);
-        // SAFETY: According to [`Unsize`] the returned fat pointer is valid
+        // SAFETY: According to [`StableUnsize`] the metadata is associated with our pointer
         unsafe {
             Box::from_raw_in(
                 ptr::from_raw_parts_mut(
-                    // SAFETY: this is derived from the box with is currently live
-                    Unsize::target_data_address(this).cast_mut(),
-                    // SAFETY: this is derived from the box with is currently live
+                    this.cast(),
+                    // SAFETY: this is derived from the box which is currently live
                     Unsize::target_metadata(this),
                 ),
                 a,
