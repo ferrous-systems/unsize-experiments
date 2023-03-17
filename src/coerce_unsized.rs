@@ -1,8 +1,10 @@
 use core::alloc::Allocator;
+use core::cell::Cell;
 use core::pin::Pin;
 use core::ptr;
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 use crate::unsize::Unsize;
 /// Trait that indicates that this is a pointer or a wrapper for one,
@@ -169,6 +171,10 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     }
 }
 
+/*
+ * Some more interesting implementations
+ */
+
 // Box<T> -> Box<U>
 impl<T: ?Sized + Unsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
     fn coerce_unsized(self) -> Box<U, A> {
@@ -206,3 +212,30 @@ where
         }
     }
 }
+
+impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T> {
+    fn coerce_unsized(self) -> Cell<U> {
+        Cell::new(self.into_inner().coerce_unsized())
+    }
+}
+
+/*
+// 🚨 ARC IS UNSOUND UNDER THIS MODEL 🚨
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
+    fn coerce_unsized(self) -> Arc<U> {
+        let ptr = Arc::into_raw(self);
+        // 🚨 THIS IS UNSOUND 🚨
+        // For this to be valid the target_data_address may NOT change
+        // `ptr` points to the data part of ArcInner<T>, target_data_address might not return this pointer though
+        // which will cause Arc::from_raw to go up in flames
+        unsafe {
+            Arc::from_raw(ptr::from_raw_parts(
+                // SAFETY: ptr is derived from a live Arc and is therefor valid
+                Unsize::target_data_address(ptr),
+                // SAFETY: ptr is derived from a live Arc and is therefor valid
+                Unsize::target_metadata(ptr),
+            ))
+        }
+    }
+}
+*/

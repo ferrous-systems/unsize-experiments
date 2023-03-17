@@ -6,6 +6,7 @@ use core::ptr::{DynMetadata, Pointee};
 use crate::pointer::Pointer;
 use crate::unsize::Unsize;
 
+// This things is a mess, I tried encoding most of the rules about it in the trait signature, but as you can tell that didn't go too well ...
 pub trait DispatchFromDyn<UnsizedSelf, SelfPointee, UnsizedSelfPointee>
 where
     Self: Pointer<SelfPointee>,

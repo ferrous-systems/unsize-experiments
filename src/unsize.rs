@@ -68,7 +68,7 @@ unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
 }
 */
 
-// Note that this impl has observable on stable, and we can get overlap with some explicit impls here
+// Note that this impl is observable on stable, and we can get overlap with some explicit impls by users
 /* the compiler will generate impls of the form:
 unsafe impl<T, U> Unsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {
     // Note: This could be a safe method with https://rust-lang.github.io/rfcs/3245-refined-impls.html
