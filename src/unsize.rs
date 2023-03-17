@@ -21,7 +21,7 @@ use core::ptr::Pointee;
 ///
 /// # Safety
 ///
-/// Implementations of this trait require the output of [`Unsize::metadata`] and [`Unsize::data_address`] to belong
+/// Implementations of this trait require the output of [`Unsize::target_metadata`] and [`Unsize::target_data_address`] to belong
 /// to the same object. In other words, creating a DST pointer out of these two outputs should result in a valid pointer.
 ///
 /// [`ops::CoerceUnsized`]: crate::ops::CoerceUnsized
@@ -61,31 +61,41 @@ where
 ///
 /// # Safety
 ///
-/// The implementation of [`Unsize::target_data_address`] must return the input pointer.
-/// The implementation of [`Unsize::target_metadata`] must return the same as [`StaticUnsize::target_metadata`].
-#[const_trait]
+/// The implementation of [`StaticUnsize::target_metadata`] must return metadata that is valid for
+/// any object that represents the [`Target`] type.
 pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
 {
-    // This could probably be a `const`?
+    // This should probably be a `const`?
     fn target_metadata() -> <Target as Pointee>::Metadata;
 }
 
-/// SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
-unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
-    unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
-        N
+// StaticUnsize implies Unsize!
+unsafe impl<T, Target> Unsize<Target> for T
+where
+    Target: ?Sized,
+    T: StaticUnsize<Target>,
+{
+    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
+        <Self as StaticUnsize<Target>>::target_metadata()
     }
+
     unsafe fn target_data_address(self: *const Self) -> *const () {
         self.cast()
     }
 }
-/// SAFETY: `target_data_address` returns the input pointer
-unsafe impl<T, const N: usize> StableUnsize<[T]> for [T; N] {}
+// StaticUnsize implies StableUnsize!
+unsafe impl<T, Target> StableUnsize<Target> for T
+where
+    Target: ?Sized,
+    T: StaticUnsize<Target>,
+{
+}
+
 /// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::target_metadata`
-unsafe impl<T, const N: usize> const StaticUnsize<[T]> for [T; N] {
+unsafe impl<T, const N: usize> StaticUnsize<[T]> for [T; N] {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
         N
     }
@@ -104,16 +114,7 @@ unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
 }
 
 /* the compiler will generate impls of the form:
-unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
-    unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
-        intrinsics::vtable::<Trait>()
-    }
-    unsafe fn target_data_address(self: *const Self) -> *const () {
-        self.cast()
-    }
-}
-unsafe impl<trait Trait, T: Trait> StableUnsize<dyn Trait> for T {}
-unsafe impl<trait Trait, T: Trait> const StaticUnsize<dyn Trait> for T {
+unsafe impl<trait Trait, T: Trait> StaticUnsize<dyn Trait> for T {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
         intrinsics::vtable::<Trait>()
     }
@@ -122,18 +123,7 @@ unsafe impl<trait Trait, T: Trait> const StaticUnsize<dyn Trait> for T {
 
 // Note that this impl is observable on stable, and we can get overlap with some explicit impls by users
 /* the compiler will generate impls of the form:
-unsafe impl<T, U> Unsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {
-    // Note: This could be a safe method with https://rust-lang.github.io/rfcs/3245-refined-impls.html
-    // removing the restriction that the pointer has to be valid
-    unsafe fn metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
-        unsafe { Unsize::metadata(&raw const (*self).<last_field>) }
-    }
-    unsafe fn target_data_address(self: *const Self) -> *const () {
-        self.cast()
-    }
-}
-unsafe impl<T, U> StableUnsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {}
-unsafe impl<T, U> const StaticUnsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {
+unsafe impl<T, U> StaticUnsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
         intrinsics::vtable::<Trait>()
     }

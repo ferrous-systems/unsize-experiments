@@ -5,8 +5,7 @@
     ptr_metadata,
     arbitrary_self_types,
     allocator_api,
-    unsafe_pin_internals,
-    const_trait_impl
+    unsafe_pin_internals
 )]
 
 extern crate alloc;

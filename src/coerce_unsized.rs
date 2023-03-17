@@ -135,7 +135,7 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
 // Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
 impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
     fn coerce_unsized(self) -> *mut U {
-        ptr::from_raw_parts_mut(self.cast(), StaticUnsize::target_metadata())
+        ptr::from_raw_parts_mut(self.cast(), <T as StaticUnsize<U>>::target_metadata())
     }
 }
 
@@ -143,7 +143,7 @@ impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
 // Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
 impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), StaticUnsize::target_metadata())
+        ptr::from_raw_parts(self.cast(), <T as StaticUnsize<U>>::target_metadata())
     }
 }
 
@@ -151,7 +151,7 @@ impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T 
 // Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
 impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), StaticUnsize::target_metadata())
+        ptr::from_raw_parts(self.cast(), <T as StaticUnsize<U>>::target_metadata())
     }
 }
 
