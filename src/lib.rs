@@ -5,15 +5,16 @@
     ptr_metadata,
     arbitrary_self_types,
     allocator_api,
-    unsafe_pin_internals
+    unsafe_pin_internals,
+    const_trait_impl
 )]
 
 extern crate alloc;
 
-mod coerce_unsized;
-mod dispatch_from_dyn;
-mod pointer;
-mod unsize;
+pub mod coerce_unsized;
+pub mod dispatch_from_dyn;
+pub mod pointer;
+pub mod unsize;
 
 #[cfg(test)]
 mod tests {
@@ -44,10 +45,9 @@ mod tests {
         assert_eq!(&*slice, &[10; 0][..]);
     }
 
-    // This fails to compile as it should, Vec does not coerce with an unchanging address
-    // #[test]
-    // fn arc_is_unchanging() {
-    //     let slice: alloc::sync::Arc<[_]> =
-    //         alloc::sync::Arc::new(alloc::vec![[0; 10]; 10]).coerce_unsized();
-    // }
+    #[test]
+    fn ui() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/ui/*.rs");
+    }
 }

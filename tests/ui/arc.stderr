@@ -1,0 +1,16 @@
+error[E0277]: the trait bound `&Vec<[{integer}; 10]>: unsizing_experiments::coerce_unsized::CoerceUnsized<Arc<[_]>>` is not satisfied
+ --> tests/ui/arc.rs:4:78
+  |
+4 |     let _: std::sync::Arc<[_]> = std::sync::Arc::new(std::vec![[0; 10]; 10]).coerce_unsized();
+  |                                                                              ^^^^^^^^^^^^^^ the trait `unsizing_experiments::coerce_unsized::CoerceUnsized<Arc<[_]>>` is not implemented for `&Vec<[{integer}; 10]>`
+  |
+  = help: the following other types implement trait `unsizing_experiments::coerce_unsized::CoerceUnsized<Target>`:
+            <&'a T as unsizing_experiments::coerce_unsized::CoerceUnsized<*const U>>
+            <&'a mut T as unsizing_experiments::coerce_unsized::CoerceUnsized<&'a mut U>>
+            <&'a mut T as unsizing_experiments::coerce_unsized::CoerceUnsized<*const U>>
+            <&'a mut T as unsizing_experiments::coerce_unsized::CoerceUnsized<*mut U>>
+            <&'b T as unsizing_experiments::coerce_unsized::CoerceUnsized<&'a U>>
+            <&'b mut T as unsizing_experiments::coerce_unsized::CoerceUnsized<&'a U>>
+            <*const T as unsizing_experiments::coerce_unsized::CoerceUnsized<*const U>>
+            <*mut T as unsizing_experiments::coerce_unsized::CoerceUnsized<*const U>>
+          and $N others
