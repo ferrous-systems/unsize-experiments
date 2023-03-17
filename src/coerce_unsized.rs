@@ -6,7 +6,7 @@ use core::ptr;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
-use crate::unsize::Unsize;
+use crate::unsize::{StableUnsize, Unsize};
 /// Trait that indicates that this is a pointer or a wrapper for one,
 /// where unsizing can be performed on the pointee.
 ///
@@ -40,7 +40,8 @@ use crate::unsize::Unsize;
 /// [nomicon-coerce]: ../../nomicon/coercions.html
 // #[lang = "coerce_unsized"]
 pub trait CoerceUnsized<Target>
-// std has this bound for some reason, but it's technically not required for any coercions
+// std has this bound for some reason, but it's technically not required for any coercions,
+// since Target is supposed to be a pointer or wrapper to a pointer
 // where Target: ?Sized,
 {
     fn coerce_unsized(self) -> Target;
@@ -219,23 +220,17 @@ impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T> {
     }
 }
 
-/*
-// 🚨 ARC IS UNSOUND UNDER THIS MODEL 🚨
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
+// Note the use of StableUnsize! unstable unsize would be unsound as arc relies on the data pointer pointing inside of the ArcInner.
+impl<T: ?Sized + StableUnsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
     fn coerce_unsized(self) -> Arc<U> {
         let ptr = Arc::into_raw(self);
-        // 🚨 THIS IS UNSOUND 🚨
-        // For this to be valid the target_data_address may NOT change
-        // `ptr` points to the data part of ArcInner<T>, target_data_address might not return this pointer though
-        // which will cause Arc::from_raw to go up in flames
+        // SAFETY: The arc is safe to be constructed as the pointer is unchanged
         unsafe {
             Arc::from_raw(ptr::from_raw_parts(
-                // SAFETY: ptr is derived from a live Arc and is therefor valid
-                Unsize::target_data_address(ptr),
+                ptr.cast(),
                 // SAFETY: ptr is derived from a live Arc and is therefor valid
                 Unsize::target_metadata(ptr),
             ))
         }
     }
 }
-*/

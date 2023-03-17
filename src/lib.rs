@@ -37,4 +37,17 @@ mod tests {
             &core::array::from_fn::<_, 10, _>(|_| alloc::vec![0; 10])
         );
     }
+
+    #[test]
+    fn arc_it() {
+        let slice: alloc::sync::Arc<[_]> = alloc::sync::Arc::new([10; 0]).coerce_unsized();
+        assert_eq!(&*slice, &[10; 0][..]);
+    }
+
+    // This fails to compile as it should, Vec does not coerce with an unchanging address
+    // #[test]
+    // fn arc_is_unchanging() {
+    //     let slice: alloc::sync::Arc<[_]> =
+    //         alloc::sync::Arc::new(alloc::vec![[0; 10]; 10]).coerce_unsized();
+    // }
 }
