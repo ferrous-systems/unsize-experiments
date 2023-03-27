@@ -1,5 +1,6 @@
 {
     "rust-analyzer.diagnostics.disabled": [
-        "type-mismatch" // r-a, or rather chalk, does not know about Pointee being implemented for everything
+        "type-mismatch", // r-a, or rather chalk, does not know about Pointee being implemented for everything
+        "unresolved-method", // r-a chokes on one of the tests
     ]
 }

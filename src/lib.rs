@@ -17,7 +17,10 @@ pub mod unsize;
 
 #[cfg(test)]
 mod tests {
+    use thin_vec::ThinVec;
+
     use crate::coerce_unsized::CoerceUnsized;
+    use crate::unsize::{StaticUnsize, Unsize};
 
     use super::*;
 
@@ -50,6 +53,62 @@ mod tests {
     }
 
     #[test]
+    fn fixed_str() {
+        #[repr(transparent)]
+        struct FixedString<const N: usize>([u8; N]);
+
+        unsafe impl<const N: usize> StaticUnsize<str> for FixedString<N> {
+            fn target_metadata() -> <str as core::ptr::Pointee>::Metadata {
+                N
+            }
+        }
+        let concrete = FixedString(*b"foo");
+        let coerced: &str = (&concrete).coerce_unsized();
+        assert_eq!(coerced, "foo");
+    }
+
+    #[test]
+    fn thin_vec() {
+        unsafe impl<T> Unsize<[T]> for ThinVec<T> {
+            unsafe fn target_metadata(self: *const Self) -> <[T] as core::ptr::Pointee>::Metadata {
+                unsafe { (*self).len() }
+            }
+
+            unsafe fn target_data_address(self: *const Self) -> *const () {
+                unsafe { (*self).as_ptr().cast() }
+            }
+        }
+        let concrete = thin_vec::thin_vec![0; 10];
+        let coerced: &[_] = (&concrete).coerce_unsized();
+        assert_eq!(coerced, &[0; 10][..]);
+    }
+
+    #[test]
+    fn to_dyn_trait_coerce() {
+        trait Trait {
+            fn as_string(&self) -> alloc::string::String;
+        }
+        impl Trait for i32 {
+            fn as_string(&self) -> alloc::string::String {
+                alloc::string::ToString::to_string(self)
+            }
+        }
+        // emulate the compiler impl
+        unsafe impl StaticUnsize<dyn Trait> for i32 {
+            fn target_metadata() -> <dyn Trait as core::ptr::Pointee>::Metadata {
+                core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _)
+            }
+        }
+        let concrete = 0;
+        let coerced: &dyn Trait = (&concrete).coerce_unsized();
+        assert_eq!(
+            coerced.as_string(),
+            alloc::string::ToString::to_string(&concrete)
+        );
+    }
+
+    #[test]
+    #[cfg(not(miri))]
     fn ui() {
         let t = trybuild::TestCases::new();
         t.compile_fail("tests/ui/*.rs");

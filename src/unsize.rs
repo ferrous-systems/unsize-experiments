@@ -63,6 +63,7 @@ where
 ///
 /// The implementation of [`StaticUnsize::target_metadata`] must return metadata that is valid for
 /// any object that represents the [`Target`] type.
+/// (is this needed? is metadata always valid? if yes this specific trait could be safe to implement due to the blanket impls below)
 pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
 where
     // ideally this would be !Sized
