@@ -20,7 +20,7 @@ mod tests {
     use thin_vec::ThinVec;
 
     use crate::coerce_unsized::CoerceUnsized;
-    use crate::unsize::{StaticUnsize, Unsize};
+    use crate::unsize::{ConstUnsize, Unsize};
 
     use super::*;
 
@@ -60,7 +60,7 @@ mod tests {
         struct FixedString<const N: usize>([u8; N]);
 
         // SAFETY: The metadata returned by `target_metadata` is valid for a `str` object representing the `Self` object
-        unsafe impl<const N: usize> StaticUnsize<str> for FixedString<N> {
+        unsafe impl<const N: usize> ConstUnsize<str> for FixedString<N> {
             const TARGET_METADATA: <str as core::ptr::Pointee>::Metadata = N;
         }
         let concrete = FixedString(*b"foo");
@@ -99,7 +99,7 @@ mod tests {
         }
         // emulate the compiler impl
         // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
-        unsafe impl StaticUnsize<dyn Trait> for i32 {
+        unsafe impl ConstUnsize<dyn Trait> for i32 {
             const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
                 core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _);
         }
@@ -121,26 +121,26 @@ mod tests {
         }
         // emulate the compiler impls
         // SAFETY: field is the last field of Foo, so the layout is stable
-        unsafe impl<T, U> StaticUnsize<Foo<U>> for Foo<T>
+        unsafe impl<T, U> ConstUnsize<Foo<U>> for Foo<T>
         where
-            U: ?Sized,                    // bound for the generic param that is being coerced
-            T: StaticUnsize<U>,           // bound for the generic param that is being coerced
-            Bar<T>: StaticUnsize<Bar<U>>, // bound derived from Foo's last field
+            U: ?Sized,                   // bound for the generic param that is being coerced
+            T: ConstUnsize<U>,           // bound for the generic param that is being coerced
+            Bar<T>: ConstUnsize<Bar<U>>, // bound derived from Foo's last field
             Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
         {
             const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata =
-                <Bar<T> as StaticUnsize<Bar<U>>>::TARGET_METADATA;
+                <Bar<T> as ConstUnsize<Bar<U>>>::TARGET_METADATA;
         }
         // SAFETY: field is the last field of Bar, so the layout is stable
-        unsafe impl<T, U> StaticUnsize<Bar<U>> for Bar<T>
+        unsafe impl<T, U> ConstUnsize<Bar<U>> for Bar<T>
         where
-            U: ?Sized,          // bound for the generic param that is being coerced
-            T: StaticUnsize<U>, // bound for the generic param that is being coerced
-            T: StaticUnsize<U>, // bound derived from Bar's last field
+            U: ?Sized,         // bound for the generic param that is being coerced
+            T: ConstUnsize<U>, // bound for the generic param that is being coerced
+            T: ConstUnsize<U>, // bound derived from Bar's last field
             Bar<U>: core::ptr::Pointee<Metadata = <U as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
         {
             const TARGET_METADATA: <Bar<U> as core::ptr::Pointee>::Metadata =
-                <T as StaticUnsize<U>>::TARGET_METADATA;
+                <T as ConstUnsize<U>>::TARGET_METADATA;
         }
         let concrete = Foo {
             field: Bar { field: [0; 10] },

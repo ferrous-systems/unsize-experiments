@@ -67,10 +67,10 @@ where
 ///
 /// # Safety
 ///
-/// - The implementation of [`StaticUnsize::TARGET_METADATA`] must return metadata that is valid for
+/// - The implementation of [`ConstUnsize::TARGET_METADATA`] must return metadata that is valid for
 /// any object that represents the [`Target`] type.
 /// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
+pub unsafe trait ConstUnsize<Target>: StableUnsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
@@ -95,23 +95,23 @@ where
         self.cast()
     }
 }
-// StaticUnsize implies StableUnsize!
+// ConstUnsize implies StableUnsize!
 // SAFETY:
 // - The implementation of [`StableUnsize::target_metadata`] returns metadata that is valid for
-// all objects of type `Target` as per `StaticUnsize`
-// - The implementing type and [`Target`] are layout compatible as per `StaticUnsize`.
+// all objects of type `Target` as per `ConstUnsize`
+// - The implementing type and [`Target`] are layout compatible as per `ConstUnsize`.
 unsafe impl<T, Target> StableUnsize<Target> for T
 where
     Target: ?Sized,
-    T: StaticUnsize<Target>,
+    T: ConstUnsize<Target>,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
-        <Self as StaticUnsize<Target>>::TARGET_METADATA
+        <Self as ConstUnsize<Target>>::TARGET_METADATA
     }
 }
 
-// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::TARGET_METADATA`
-unsafe impl<T, const N: usize> StaticUnsize<[T]> for [T; N] {
+// SAFETY: `Unsize::target_metadata` returns the same value as `ConstUnsize::TARGET_METADATA`
+unsafe impl<T, const N: usize> ConstUnsize<[T]> for [T; N] {
     const TARGET_METADATA: <[T] as Pointee>::Metadata = N;
 }
 
@@ -128,7 +128,7 @@ unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
 }
 
 /* the compiler will generate impls of the form:
-unsafe impl<trait Trait, T: Trait> StaticUnsize<dyn Trait> for T {
+unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
         intrinsics::vtable::<dyn Trait, T>()
     }
@@ -137,16 +137,16 @@ unsafe impl<trait Trait, T: Trait> StaticUnsize<dyn Trait> for T {
 
 // Note that this impl is observable on stable rust already
 /* the compiler will generate impls of the form:
-unsafe impl<T, U> StaticUnsize<Foo<U>> for Foo<T>
+unsafe impl<T, U> ConstUnsize<Foo<U>> for Foo<T>
 where
     U: ?Sized,
     // bound for the generic param that is being coerced
-    T: StaticUnsize<U>,
+    T: ConstUnsize<U>,
     // bound for the type of the last field that is being coerced
-    Bar<T>: StaticUnsize<Bar<U>>,
+    Bar<T>: ConstUnsize<Bar<U>>,
     // demand that the metadata for Foo is the same as its last field
     Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>,
 {
-    const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata = <Bar<T> as StaticUnsize<Bar<U>>>::TARGET_METADATA;
+    const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata = <Bar<T> as ConstUnsize<Bar<U>>>::TARGET_METADATA;
 }
 */

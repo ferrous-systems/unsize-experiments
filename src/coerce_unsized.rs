@@ -6,7 +6,7 @@ use core::ptr;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
-use crate::unsize::{StableUnsize, StaticUnsize, Unsize};
+use crate::unsize::{ConstUnsize, StableUnsize, Unsize};
 /// Trait that indicates that this is a pointer or a wrapper for one,
 /// where unsizing can be performed on the pointee.
 ///
@@ -130,26 +130,26 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
 }
 
 // *mut T -> *mut U
-// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
+// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
     fn coerce_unsized(self) -> *mut U {
-        ptr::from_raw_parts_mut(self.cast(), <T as StaticUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts_mut(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
     }
 }
 
 // *mut T -> *const U
-// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
+// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), <T as StaticUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
     }
 }
 
 // *const T -> *const U
-// Note the use of StaticUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + StaticUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
+// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), <T as StaticUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
     }
 }
 
