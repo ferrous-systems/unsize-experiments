@@ -67,7 +67,7 @@ where
 ///
 /// # Safety
 ///
-/// - The implementation of [`StaticUnsize::target_metadata`] must return metadata that is valid for
+/// - The implementation of [`StaticUnsize::TARGET_METADATA`] must return metadata that is valid for
 /// any object that represents the [`Target`] type.
 /// - The implementing type and [`Target`] must be layout compatible.
 pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
@@ -75,8 +75,7 @@ where
     // ideally this would be !Sized
     Target: ?Sized,
 {
-    // This should probably be a `const`?
-    fn target_metadata() -> <Target as Pointee>::Metadata;
+    const TARGET_METADATA: <Target as Pointee>::Metadata;
 }
 
 // StableUnsize implies Unsize!
@@ -107,15 +106,13 @@ where
     T: StaticUnsize<Target>,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
-        <Self as StaticUnsize<Target>>::target_metadata()
+        <Self as StaticUnsize<Target>>::TARGET_METADATA
     }
 }
 
-// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::target_metadata`
+// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::TARGET_METADATA`
 unsafe impl<T, const N: usize> StaticUnsize<[T]> for [T; N] {
-    fn target_metadata() -> <[T] as Pointee>::Metadata {
-        N
-    }
+    const TARGET_METADATA: <[T] as Pointee>::Metadata = N;
 }
 
 // SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
@@ -150,8 +147,6 @@ where
     // demand that the metadata for Foo is the same as its last field
     Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>,
 {
-    fn target_metadata() -> <Foo<U> as core::ptr::Pointee>::Metadata {
-        <Bar<T> as StaticUnsize<Bar<U>>>::target_metadata()
-    }
+    const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata = <Bar<T> as StaticUnsize<Bar<U>>>::TARGET_METADATA;
 }
 */

@@ -61,9 +61,7 @@ mod tests {
 
         // SAFETY: The metadata returned by `target_metadata` is valid for a `str` object representing the `Self` object
         unsafe impl<const N: usize> StaticUnsize<str> for FixedString<N> {
-            fn target_metadata() -> <str as core::ptr::Pointee>::Metadata {
-                N
-            }
+            const TARGET_METADATA: <str as core::ptr::Pointee>::Metadata = N;
         }
         let concrete = FixedString(*b"foo");
         let coerced: &str = (&concrete).coerce_unsized();
@@ -102,9 +100,8 @@ mod tests {
         // emulate the compiler impl
         // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
         unsafe impl StaticUnsize<dyn Trait> for i32 {
-            fn target_metadata() -> <dyn Trait as core::ptr::Pointee>::Metadata {
-                core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _)
-            }
+            const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
+                core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _);
         }
         let concrete = 0;
         let coerced: &dyn Trait = (&concrete).coerce_unsized();
@@ -131,9 +128,8 @@ mod tests {
             Bar<T>: StaticUnsize<Bar<U>>, // bound derived from Foo's last field
             Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
         {
-            fn target_metadata() -> <Foo<U> as core::ptr::Pointee>::Metadata {
-                <Bar<T> as StaticUnsize<Bar<U>>>::target_metadata()
-            }
+            const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata =
+                <Bar<T> as StaticUnsize<Bar<U>>>::TARGET_METADATA;
         }
         // SAFETY: field is the last field of Bar, so the layout is stable
         unsafe impl<T, U> StaticUnsize<Bar<U>> for Bar<T>
@@ -143,9 +139,8 @@ mod tests {
             T: StaticUnsize<U>, // bound derived from Bar's last field
             Bar<U>: core::ptr::Pointee<Metadata = <U as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
         {
-            fn target_metadata() -> <Bar<U> as core::ptr::Pointee>::Metadata {
-                <T as StaticUnsize<U>>::target_metadata()
-            }
+            const TARGET_METADATA: <Bar<U> as core::ptr::Pointee>::Metadata =
+                <T as StaticUnsize<U>>::TARGET_METADATA;
         }
         let concrete = Foo {
             field: Bar { field: [0; 10] },
