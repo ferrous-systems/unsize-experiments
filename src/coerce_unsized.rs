@@ -40,6 +40,14 @@ use crate::unsize::{ConstUnsize, StableUnsize, Unsize};
 /// [nomicon-coerce]: ../../nomicon/coercions.html
 // std has a `Target:?Sized` bound for some reason, but it's technically not required for any coercions,
 // since Target is supposed to be a pointer or wrapper to a pointer
+// TODO: This definition currently permits users to do some funky stuff that isn't using unsizing at all! Can we somehow restrict that?
+// There are basically two kinds of implementations we want to allow
+// - Delegation a la Cell or Pin (wrapper types), where we do the coercion for the inner type and then rewrap it
+// - The actual coercion, which happens on pointer types
+//
+// assuming std had a Pointer trait, we could restrict Self and Target to this trait, and in case for Cell and Pin (and similar),
+// have conditional implementations for this trait on them if their inner type also implements the trait, as effectively they still act like pointers
+// We can't make Deref work for this, as raw pointers don't implement it
 pub trait CoerceUnsized<Target> {
     fn coerce_unsized(self) -> Target;
 }

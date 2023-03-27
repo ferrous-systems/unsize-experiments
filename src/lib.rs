@@ -5,7 +5,8 @@
     ptr_metadata,
     arbitrary_self_types,
     allocator_api,
-    unsafe_pin_internals
+    unsafe_pin_internals,
+    negative_impls
 )]
 
 extern crate alloc;
@@ -17,6 +18,8 @@ pub mod unsize;
 
 #[cfg(test)]
 mod tests {
+    use core::ptr::addr_of;
+
     use thin_vec::ThinVec;
 
     use crate::coerce_unsized::CoerceUnsized;
@@ -64,6 +67,29 @@ mod tests {
             const TARGET_METADATA: <str as core::ptr::Pointee>::Metadata = N;
         }
         let concrete = FixedString(*b"foo");
+        let coerced: &str = (&concrete).coerce_unsized();
+        assert_eq!(coerced, "foo");
+    }
+
+    #[test]
+    fn fixed_str_dyn_len() {
+        struct FixedStringWithLen<const N: usize>(usize, [u8; N]);
+
+        // SAFETY: The metadata returned by `target_metadata` is valid for a `str` object representing the `Self` object
+        unsafe impl<const N: usize> Unsize<str> for FixedStringWithLen<N> {
+            unsafe fn target_metadata(self: *const Self) -> <str as core::ptr::Pointee>::Metadata {
+                // SAFETY: self points to a live Self
+                let len = unsafe { (*self).0 };
+                assert!(len <= N);
+                len
+            }
+
+            unsafe fn target_data_address(self: *const Self) -> *const () {
+                // SAFETY: self points to a live Self
+                unsafe { addr_of!((*self).1).cast() }
+            }
+        }
+        let concrete = FixedStringWithLen(3, *b"foo\0\0\0\0\0");
         let coerced: &str = (&concrete).coerce_unsized();
         assert_eq!(coerced, "foo");
     }

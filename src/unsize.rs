@@ -29,7 +29,7 @@ use core::ptr::Pointee;
 /// [RFC982]: https://github.com/rust-lang/rfcs/blob/master/text/0982-dst-coercion.md
 /// [nomicon-coerce]: ../../nomicon/coercions.html
 // #[lang = "unsize"]
-pub unsafe trait Unsize<Target>
+pub unsafe trait Unsize<Target>: Sized
 where
     // ideally this would be !Sized
     Target: ?Sized,
