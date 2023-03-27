@@ -117,16 +117,25 @@ unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
 /* the compiler will generate impls of the form:
 unsafe impl<trait Trait, T: Trait> StaticUnsize<dyn Trait> for T {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
-        intrinsics::vtable::<Trait>()
+        intrinsics::vtable::<dyn Trait, T>()
     }
 }
 */
 
-// Note that this impl is observable on stable, and we can get overlap with some explicit impls by users
+// Note that this impl is observable on stable rust already
 /* the compiler will generate impls of the form:
-unsafe impl<T, U> StaticUnsize<Foo<..., U, ...>> for Foo<..., T, ...> where the rules apply that the docs currently state you know the drill ... {
-    fn target_metadata() -> <[T] as Pointee>::Metadata {
-        intrinsics::vtable::<Trait>()
+unsafe impl<T, U> StaticUnsize<Foo<U>> for Foo<T>
+where
+    U: ?Sized,
+    // bound for the generic param that is being coerced
+    T: StaticUnsize<U>,
+    // bound for the type of the last field that is being coerced
+    Bar<T>: StaticUnsize<Bar<U>>,
+    // demand that the metadata for Foo is the same as its last field
+    Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>,
+{
+    fn target_metadata() -> <Foo<U> as core::ptr::Pointee>::Metadata {
+        <Bar<T> as StaticUnsize<Bar<U>>>::target_metadata()
     }
 }
 */
