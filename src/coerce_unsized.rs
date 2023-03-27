@@ -96,10 +96,8 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a mut T
         ptr::from_raw_parts(
             // SAFETY: self is a reference
             unsafe { Unsize::target_data_address(self) },
-            unsafe {
-                // SAFETY: self is a reference
-                Unsize::target_metadata(self)
-            },
+            // SAFETY: self is a reference
+            unsafe { Unsize::target_metadata(self) },
         )
     }
 }

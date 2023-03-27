@@ -21,8 +21,8 @@ use core::ptr::Pointee;
 ///
 /// # Safety
 ///
-/// Implementations of this trait require the output of [`Unsize::target_metadata`] and [`Unsize::target_data_address`] to belong
-/// to the same object. In other words, creating a DST pointer out of these two outputs should result in a valid pointer.
+/// - The implementation of [`Unsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the output of [`Unsize::target_data_address`].
 ///
 /// [`ops::CoerceUnsized`]: crate::ops::CoerceUnsized
 /// [`Rc`]: ../../std/rc/struct.Rc.html
@@ -40,30 +40,36 @@ where
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
     /// # Safety
     ///
-    /// `self` must point to a valid instance of `Self` and the returned value must point to a valid object.
-    // Note: This should effectively allow to field project (or return self) only.
+    /// `self` must point to a valid instance of `Self`.
+    // Note: This should effectively allow to field project (or return self) only?
     unsafe fn target_data_address(self: *const Self) -> *const ();
 }
 
-/// A type that can be unsized solely through compile time information
+/// Same as [`Unsize`] but the target data address may not change.
 ///
 /// # Safety
 ///
-/// The implementation of [`Unsize::target_data_address`] must return the input pointer.
+/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the `self` parameter
+/// - The implementing type and [`Target`] must be layout compatible.
 pub unsafe trait StableUnsize<Target>: Unsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
 {
+    /// # Safety
+    ///
+    /// `self` must point to a valid instance of `Self`
+    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
 }
 
 /// A type that can be unsized solely through compile time information.
 ///
 /// # Safety
 ///
-/// The implementation of [`StaticUnsize::target_metadata`] must return metadata that is valid for
+/// - The implementation of [`StaticUnsize::target_metadata`] must return metadata that is valid for
 /// any object that represents the [`Target`] type.
-/// (is this needed? is metadata always valid? if yes this specific trait could be safe to implement due to the blanket impls below)
+/// - The implementing type and [`Target`] must be layout compatible.
 pub unsafe trait StaticUnsize<Target>: StableUnsize<Target>
 where
     // ideally this would be !Sized
@@ -73,14 +79,17 @@ where
     fn target_metadata() -> <Target as Pointee>::Metadata;
 }
 
-// StaticUnsize implies Unsize!
+// StableUnsize implies Unsize!
+// SAFETY: `target_metadata` returns valid metadata for the `target_data_address` result, as per
+// `StableUnsize::target_metadata` implementation
 unsafe impl<T, Target> Unsize<Target> for T
 where
     Target: ?Sized,
-    T: StaticUnsize<Target>,
+    T: StableUnsize<Target>,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
-        <Self as StaticUnsize<Target>>::target_metadata()
+        // SAFETY: `self` points to a valid object of Self as per the calling contract of `Unsize::target_metadata`
+        unsafe { <Self as StableUnsize<Target>>::target_metadata(self) }
     }
 
     unsafe fn target_data_address(self: *const Self) -> *const () {
@@ -88,21 +97,28 @@ where
     }
 }
 // StaticUnsize implies StableUnsize!
+// SAFETY:
+// - The implementation of [`StableUnsize::target_metadata`] returns metadata that is valid for
+// all objects of type `Target` as per `StaticUnsize`
+// - The implementing type and [`Target`] are layout compatible as per `StaticUnsize`.
 unsafe impl<T, Target> StableUnsize<Target> for T
 where
     Target: ?Sized,
     T: StaticUnsize<Target>,
 {
+    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
+        <Self as StaticUnsize<Target>>::target_metadata()
+    }
 }
 
-/// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::target_metadata`
+// SAFETY: `Unsize::target_metadata` returns the same value as `StaticUnsize::target_metadata`
 unsafe impl<T, const N: usize> StaticUnsize<[T]> for [T; N] {
     fn target_metadata() -> <[T] as Pointee>::Metadata {
         N
     }
 }
 
-/// SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
+// SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
 unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
     unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
         // SAFETY: self is a valid pointer

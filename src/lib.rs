@@ -50,6 +50,7 @@ mod tests {
     #[test]
     fn static_unsize() {
         let coerced: *const [_] = (&[0; 10] as *const [i32; 10]).coerce_unsized();
+        // SAFETY: coerced points to a live slice
         assert_eq!(unsafe { &*coerced }, &[0; 10][..]);
     }
 
@@ -58,6 +59,7 @@ mod tests {
         #[repr(transparent)]
         struct FixedString<const N: usize>([u8; N]);
 
+        // SAFETY: The metadata returned by `target_metadata` is valid for a `str` object representing the `Self` object
         unsafe impl<const N: usize> StaticUnsize<str> for FixedString<N> {
             fn target_metadata() -> <str as core::ptr::Pointee>::Metadata {
                 N
@@ -70,12 +72,15 @@ mod tests {
 
     #[test]
     fn thin_vec() {
+        // SAFETY: The metadata returned is valid for the data pointer returned by target_data_address
         unsafe impl<T> Unsize<[T]> for ThinVec<T> {
             unsafe fn target_metadata(self: *const Self) -> <[T] as core::ptr::Pointee>::Metadata {
+                // SAFETY: self points a live Self as per calling contract
                 unsafe { (*self).len() }
             }
 
             unsafe fn target_data_address(self: *const Self) -> *const () {
+                // SAFETY: self points a live Self as per calling contract
                 unsafe { (*self).as_ptr().cast() }
             }
         }
@@ -95,6 +100,7 @@ mod tests {
             }
         }
         // emulate the compiler impl
+        // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
         unsafe impl StaticUnsize<dyn Trait> for i32 {
             fn target_metadata() -> <dyn Trait as core::ptr::Pointee>::Metadata {
                 core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _)
