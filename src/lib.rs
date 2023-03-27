@@ -49,7 +49,8 @@ mod tests {
 
     #[test]
     fn static_unsize() {
-        let _: *const [_] = (&[0; 10] as *const [i32; 10]).coerce_unsized();
+        let coerced: *const [_] = (&[0; 10] as *const [i32; 10]).coerce_unsized();
+        assert_eq!(unsafe { &*coerced }, &[0; 10][..]);
     }
 
     #[test]
@@ -105,6 +106,46 @@ mod tests {
             coerced.as_string(),
             alloc::string::ToString::to_string(&concrete)
         );
+    }
+
+    #[test]
+    fn compiler_adt_builtin_coerce() {
+        struct Foo<T: ?Sized> {
+            field: Bar<T>,
+        }
+        struct Bar<T: ?Sized> {
+            field: T,
+        }
+        // emulate the compiler impls
+        // SAFETY: field is the last field of Foo, so the layout is stable
+        unsafe impl<T, U> StaticUnsize<Foo<U>> for Foo<T>
+        where
+            U: ?Sized,                    // bound for the generic param that is being coerced
+            T: StaticUnsize<U>,           // bound for the generic param that is being coerced
+            Bar<T>: StaticUnsize<Bar<U>>, // bound derived from Foo's last field
+            Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
+        {
+            fn target_metadata() -> <Foo<U> as core::ptr::Pointee>::Metadata {
+                <Bar<T> as StaticUnsize<Bar<U>>>::target_metadata()
+            }
+        }
+        // SAFETY: field is the last field of Bar, so the layout is stable
+        unsafe impl<T, U> StaticUnsize<Bar<U>> for Bar<T>
+        where
+            U: ?Sized,          // bound for the generic param that is being coerced
+            T: StaticUnsize<U>, // bound for the generic param that is being coerced
+            T: StaticUnsize<U>, // bound derived from Bar's last field
+            Bar<U>: core::ptr::Pointee<Metadata = <U as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
+        {
+            fn target_metadata() -> <Bar<U> as core::ptr::Pointee>::Metadata {
+                <T as StaticUnsize<U>>::target_metadata()
+            }
+        }
+        let concrete = Foo {
+            field: Bar { field: [0; 10] },
+        };
+        let coerced: &Foo<[i32]> = (&concrete).coerce_unsized();
+        assert_eq!(&coerced.field.field, &[0; 10][..]);
     }
 
     #[test]
