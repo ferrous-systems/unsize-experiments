@@ -16,6 +16,9 @@ pub mod dispatch_from_dyn;
 pub mod pointer;
 pub mod unsize;
 
+// https://github.com/rust-lang/rust/pull/97052
+struct TypedMetadata<T: ?Sized>(pub <T as core::ptr::Pointee>::Metadata);
+
 #[cfg(test)]
 mod tests {
     use core::ptr::addr_of;
@@ -173,6 +176,26 @@ mod tests {
         };
         let coerced: &Foo<[i32]> = (&concrete).coerce_unsized();
         assert_eq!(&coerced.field.field, &[0; 10][..]);
+    }
+
+    #[test]
+    fn coerce_type_metadata() {
+        struct Struct;
+        trait Trait {}
+
+        impl Trait for Struct {}
+        unsafe impl ConstUnsize<dyn Trait> for Struct {
+            const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
+                core::ptr::metadata::<dyn Trait>(&Struct as *const _ as *const _);
+        }
+
+        // array -> slice
+        let sized: TypedMetadata<[u8; 5]> = TypedMetadata(());
+        let _: TypedMetadata<[u8]> = sized.coerce_unsized();
+
+        // sized -> dyn
+        let sized: TypedMetadata<Struct> = TypedMetadata(());
+        let _: TypedMetadata<dyn Trait> = sized.coerce_unsized();
     }
 
     #[test]
