@@ -212,6 +212,34 @@ fn coerce_type_metadata() {
 }
 
 #[test]
+fn option_coerce() {
+    #[derive(PartialEq, Debug)]
+    enum Option<T> {
+        Some(T),
+        None,
+    }
+
+    impl<T, U> CoerceUnsized<Option<U>> for Option<T>
+    where
+        T: CoerceUnsized<U>,
+    {
+        fn coerce_unsized(self) -> Option<U> {
+            match self {
+                Option::Some(t) => Option::Some(t.coerce_unsized()),
+                Option::None => Option::None,
+            }
+        }
+    }
+
+    let concrete = Option::Some(&[0u8; 1]);
+    let coerced: Option<&[u8]> = concrete.coerce_unsized();
+    assert_eq!(coerced, Option::Some(&[0][..]));
+    let concrete = Option::None::<&[u8; 1]>;
+    let coerced: Option<&[u8]> = concrete.coerce_unsized();
+    assert_eq!(coerced, Option::None);
+}
+
+#[test]
 #[cfg(not(miri))]
 fn ui() {
     let t = trybuild::TestCases::new();
