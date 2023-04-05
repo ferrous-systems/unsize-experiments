@@ -128,6 +128,18 @@ unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
     }
 }
 
+// SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
+unsafe impl Unsize<str> for alloc::string::String {
+    unsafe fn target_metadata(self: *const Self) -> <str as Pointee>::Metadata {
+        // SAFETY: self is a valid pointer
+        unsafe { (*self).len() }
+    }
+    unsafe fn target_data_address(self: *const Self) -> *const () {
+        // SAFETY: self is a valid pointer
+        unsafe { (*self).as_ptr().cast() }
+    }
+}
+
 /* the compiler will generate impls of the form:
 unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
     fn target_metadata() -> <dyn Trait as Pointee>::Metadata {

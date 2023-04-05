@@ -239,6 +239,49 @@ fn option_coerce() {
     assert_eq!(coerced, Option::None);
 }
 
+// https://github.com/rust-lang/rfcs/pull/1792
+#[test]
+fn coerce_ref_option_inner() {
+    #[derive(PartialEq, Debug)]
+    enum Option<T> {
+        Some(T),
+        None,
+    }
+
+    impl<T, U> CoerceUnsized<Option<U>> for Option<T>
+    where
+        T: CoerceUnsized<U>,
+    {
+        fn coerce_unsized(self) -> Option<U> {
+            match self {
+                Option::Some(t) => Option::Some(t.coerce_unsized()),
+                Option::None => Option::None,
+            }
+        }
+    }
+
+    // T: Vec<T>
+    // U: [U]
+    impl<'a, 'b, T, U: ?Sized> CoerceUnsized<Option<&'b U>> for &'a Option<T>
+    where
+        &'a T: CoerceUnsized<&'b U>,
+    {
+        fn coerce_unsized(self) -> Option<&'b U> {
+            match self {
+                Option::Some(t) => Option::Some(t.coerce_unsized()),
+                Option::None => Option::None,
+            }
+        }
+    }
+
+    let concrete = Option::Some(alloc::vec![0, 1, 2, 3, 4]);
+    let coerced: Option<&[i32]> = (&concrete).coerce_unsized();
+    assert_eq!(coerced, Option::Some(&[0, 1, 2, 3, 4][..]));
+    let concrete = Option::None::<alloc::vec::Vec<i32>>;
+    let coerced: Option<&[i32]> = (&concrete).coerce_unsized();
+    assert_eq!(coerced, Option::None);
+}
+
 #[test]
 #[cfg(not(miri))]
 fn ui() {
