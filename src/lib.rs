@@ -6,7 +6,7 @@
     arbitrary_self_types,
     allocator_api,
     unsafe_pin_internals,
-    negative_impls
+    trait_upcasting
 )]
 
 extern crate alloc;

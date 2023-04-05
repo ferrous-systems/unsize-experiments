@@ -102,6 +102,10 @@ The compiler today emits 3 "kinds" of implementations for `Unsize`, which would 
     - Only the last field of `Foo` has a type involving `T`.
     - `Bar<T>: ConstUnsize<Bar<U>>`, where `Bar<T>` stands for the actual type of that last field.
 
+There is actually another impl the compiler emits which is used for trait upcasting (unstable feature), interestingly though, this one we cannot replace with `ConstUnsize` as upcasting might need to access the vtable of the subtrait! So here we have to emit an impl that uses `StableUnsize`.
+
+These compiler provided implementations have very rought impl skeletons written in pseudorust at the end of the [unsize.rs](src/unsize.rs) file.
+
 open questions:
     - Should it be allowed to change the target address, that is does `Unsize` make sense or is `StableUnsize` and `ConstUnsize` all that we need? Disallowing this would prevent `Vec<T>: [T]` as well as some other class of implementations (see for example the test `fixed_str_dyn_len` in [tests.rs](src/tests.rs))
     - Do the functions on the traits make sense as defined?
@@ -141,5 +145,4 @@ Is here in part due to some other experimentation exploring this trait's design 
 ## General open questions
 
 - Custom user borrows came up at some point where one of the ideas is to generalize the `CoerceUnsize` trait into something that also allows reborrowing, see https://github.com/rust-lang/rfcs/issues/1403#issuecomment-166980781
-- `dyn_start` can't implement trait upcasting due to it being structural, see https://github.com/rust-lang/rust/issues/104800
-- describe and integrate trait upcasting into the new definitions
+- `dyn_star` can't implement trait upcasting due to it being structural, see https://github.com/rust-lang/rust/issues/104800

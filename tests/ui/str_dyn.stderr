@@ -1,14 +1,11 @@
-error[E0277]: the size for values of type `str` cannot be known at compilation time
-  --> tests/ui/str_dyn.rs:11:70
+error[E0599]: no method named `coerce_unsized` found for reference `&'static str` in the current scope
+  --> tests/ui/str_dyn.rs:16:28
    |
-11 | unsafe impl unsizing_experiments::unsize::ConstUnsize<dyn Trait> for str {
-   |                                                                      ^^^ doesn't have a size known at compile-time
+16 |     let s: &dyn Trait = "".coerce_unsized();
+   |                            ^^^^^^^^^^^^^^ method not found in `&str`
    |
-   = help: the trait `Sized` is not implemented for `str`
-   = note: required for `str` to implement `unsizing_experiments::unsize::Unsize<(dyn Trait + 'static)>`
-   = note: required for `str` to implement `StableUnsize<(dyn Trait + 'static)>`
-note: required by a bound in `ConstUnsize`
-  --> src/unsize.rs
+   = help: items from traits can only be used if the trait is in scope
+help: the following trait is implemented but not in scope; perhaps add a `use` for it:
    |
-   | pub unsafe trait ConstUnsize<Target>: StableUnsize<Target>
-   |                                       ^^^^^^^^^^^^^^^^^^^^ required by this bound in `ConstUnsize`
+3  | use unsizing_experiments::coerce_unsized::CoerceUnsized;
+   |

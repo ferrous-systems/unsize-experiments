@@ -3,7 +3,7 @@ use core::ptr::addr_of;
 use thin_vec::ThinVec;
 
 use crate::coerce_unsized::CoerceUnsized;
-use crate::unsize::{ConstUnsize, Unsize};
+use crate::unsize::{ConstUnsize, StableUnsize, Unsize};
 
 use super::*;
 
@@ -113,6 +113,41 @@ fn to_dyn_trait_coerce() {
     let coerced: &dyn Trait = (&concrete).coerce_unsized();
     assert_eq!(
         coerced.as_string(),
+        alloc::string::ToString::to_string(&concrete)
+    );
+}
+#[test]
+fn to_dyn_trait_coerce_upcast() {
+    trait Super {
+        fn as_super_string(&self) -> alloc::string::String;
+    }
+    trait Trait: Super {}
+    impl Super for i32 {
+        fn as_super_string(&self) -> alloc::string::String {
+            alloc::string::ToString::to_string(self)
+        }
+    }
+    impl Trait for i32 {}
+    // emulate the compiler impl
+    // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
+    unsafe impl ConstUnsize<dyn Trait> for i32 {
+        const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
+            core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _);
+    }
+    // emulate the compiler impl
+    // SAFETY:
+    unsafe impl StableUnsize<dyn Super> for dyn Trait {
+        unsafe fn target_metadata(
+            self: *const Self,
+        ) -> <dyn Super as core::ptr::Pointee>::Metadata {
+            core::ptr::metadata::<dyn Super>(self as *const dyn Super)
+        }
+    }
+    let concrete = 0;
+    let coerced: &dyn Trait = (&concrete).coerce_unsized();
+    let coerced: &dyn Super = coerced.coerce_unsized();
+    assert_eq!(
+        coerced.as_super_string(),
         alloc::string::ToString::to_string(&concrete)
     );
 }

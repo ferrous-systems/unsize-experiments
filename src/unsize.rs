@@ -8,6 +8,7 @@ use core::ptr::Pointee;
 /// The following implementations are provided by the compiler:
 ///
 /// - Types implementing a trait `Trait` also implement `Unsize<dyn Trait>`.
+/// - Trait objects `dyn Trait` with supertrait `Super` implement `Unsize<dyn Super>`.
 /// - Structs `Foo<..., T, ...>` implement `Unsize<Foo<..., U, ...>>` if all of these conditions
 ///   are met:
 ///   - `T: Unsize<U>`.
@@ -84,7 +85,7 @@ where
 unsafe impl<T, Target> Unsize<Target> for T
 where
     Target: ?Sized,
-    T: StableUnsize<Target>,
+    T: StableUnsize<Target> + ?Sized,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
         // SAFETY: `self` points to a valid object of Self as per the calling contract of `Unsize::target_metadata`
@@ -103,7 +104,7 @@ where
 unsafe impl<T, Target> StableUnsize<Target> for T
 where
     Target: ?Sized,
-    T: ConstUnsize<Target>,
+    T: ConstUnsize<Target> + ?Sized,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
         <Self as ConstUnsize<Target>>::TARGET_METADATA
@@ -129,8 +130,16 @@ unsafe impl<T> Unsize<[T]> for alloc::vec::Vec<T> {
 
 /* the compiler will generate impls of the form:
 unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
-    fn target_metadata() -> <[T] as Pointee>::Metadata {
+    fn target_metadata() -> <dyn Trait as Pointee>::Metadata {
         intrinsics::vtable::<dyn Trait, T>()
+    }
+}
+*/
+
+/* the compiler will generate impls of the form:
+unsafe impl<trait Trait, trait Super> StableUnsize<dyn Super> for dyn Trait where dyn Trait: Super {
+    fn target_metadata() -> <dyn super as Pointee>::Metadata {
+        // some compiler magic
     }
 }
 */
