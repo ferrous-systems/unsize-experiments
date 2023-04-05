@@ -3,5 +3,6 @@
         "type-mismatch", // r-a, or rather chalk, does not know about Pointee being implemented for everything
     ],
     "rust-analyzer.inlayHints.expressionAdjustmentHints.enable": "always",
-    "rust-analyzer.check.command": "clippy"
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.showUnlinkedFileNotification": false
 }

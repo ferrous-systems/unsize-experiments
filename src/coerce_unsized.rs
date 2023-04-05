@@ -50,6 +50,7 @@ use crate::TypedMetadata;
 // have conditional implementations for this trait on them if their inner type also implements the trait, as effectively they still act like pointers
 // We can't make Deref work for this, as raw pointers don't implement it
 pub trait CoerceUnsized<Target> {
+    // FIXME: Does any of this have to be unsafe? Are there assumptions about unsizing coercions being made today?
     fn coerce_unsized(self) -> Target;
 }
 
@@ -167,7 +168,7 @@ impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T
  */
 
 // Box<T> -> Box<U>
-// Note the use of StableUnsize! unstable unsize would be unsound as arc relies on the data pointer pointing inside of the ArcInner.
+// Note the use of StableUnsize! unstable unsize would be unsound as the box is owning!
 impl<T: ?Sized + StableUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
     fn coerce_unsized(self) -> Box<U, A> {
         let (this, a) = Box::into_raw_with_allocator(self);
