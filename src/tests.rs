@@ -31,7 +31,7 @@ fn arc_it() {
 }
 
 #[test]
-fn static_unsize() {
+fn const_unsize_ptr() {
     let coerced: *const [_] = (&[0; 10] as *const [i32; 10]).coerce_unsized();
     // SAFETY: coerced points to a live slice
     assert_eq!(unsafe { &*coerced }, &[0; 10][..]);

@@ -15,12 +15,22 @@ The three traits form a hierarchy where `ConstUnsize` is the most specific and `
 The new `Unsize` trait now looks like
 
 ```rs
+/// # Safety
+///
+/// - The implementation of [`Unsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the output of [`Unsize::target_data_address`].
 pub unsafe trait Unsize<Target>: Sized
 where
     // ideally this would be !Sized
     Target: ?Sized,
 {
+    /// # Safety
+    ///
+    /// `self` must point to a valid instance of `Self`
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
+    /// # Safety
+    ///
+    /// `self` must point to a valid instance of `Self`.
     unsafe fn target_data_address(self: *const Self) -> *const ();
 }
 ```
@@ -92,6 +102,11 @@ The compiler today emits 3 "kinds" of implementations for `Unsize`, which would 
     - Only the last field of `Foo` has a type involving `T`.
     - `Bar<T>: ConstUnsize<Bar<U>>`, where `Bar<T>` stands for the actual type of that last field.
 
+open questions:
+    - Should it be allowed to change the target address, that is does `Unsize` make sense or is `StableUnsize` and `ConstUnsize` all that we need? Disallowing this would prevent `Vec<T>: [T]` as well as some other class of implementations (see for example the test `fixed_str_dyn_len` in [tests.rs](src/tests.rs))
+    - Do the functions on the traits make sense as defined?
+    - (the use of arbitrary self types for the self pointers was on a whim, whether we make them associated functions or not is not really too relevant)
+    - ideally the `Target: ?Sized` bound should be `Target: !Sized`, that is effectively forbidding unsizing implementations to sized targets, but this is not expressible today. The compiler could easily reject those kinds of impls anyways though.
 
 ## CoerceUnsized
 
@@ -105,12 +120,17 @@ pub trait CoerceUnsized<Target> {
 ```
 
 This effectively allows implementing the actual coercion logic in user code.
-For example implementations of the majority of core/alloc/std implementations that exist/could exist take a look at [coerce_unsized.rs](src\coerce_unsized.rs).
+For example implementations of the majority of core/alloc/std implementations that exist/could exist take a look at [coerce_unsized.rs](src/coerce_unsized.rs).
 
 Interesting to see there is that while most impls can make use of `Unsize` as the trait bounds, some require the more specific traits to work as was mentioned above, notably:
 - `Arc<T>`/`Rc<T>`/`Box<T>` require `StableUnsize` as the are owning the allocation
 - `TypeMetadata<T>` requires `ConstUnsize` as there is no actual object stored to unsize on
 - `*const T`/`*mut T` require `ConstUnsize` as the pointers may not actually be valid, so we can't access the pointee to do the unsizing on
+
+
+open questions:
+    - Are there ways to make an implementation of this cause unsoundness? That is are there places where a certain behavior for unsizing coercions is being relied on that may be broken by this?
+    - Look into the unsoundness with regards to `Pin`
 
 
 ## DispatchFromDyn
