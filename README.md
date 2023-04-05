@@ -19,7 +19,7 @@ The new `Unsize` trait now looks like
 ///
 /// - The implementation of [`Unsize::target_metadata`] must return metadata that is valid for
 /// the object pointed to by the output of [`Unsize::target_data_address`].
-pub unsafe trait Unsize<Target>: Sized
+pub unsafe trait Unsize<Target>
 where
     // ideally this would be !Sized
     Target: ?Sized,
@@ -136,3 +136,10 @@ open questions:
 ## DispatchFromDyn
 
 Is here in part due to some other experimentation exploring this trait's design space, not much progress here yet.
+
+
+## General open questions
+
+- Custom user borrows came up at some point where one of the ideas is to generalize the `CoerceUnsize` trait into something that also allows reborrowing, see https://github.com/rust-lang/rfcs/issues/1403#issuecomment-166980781
+- `dyn_start` can't implement trait upcasting due to it being structural, see https://github.com/rust-lang/rust/issues/104800
+- describe and integrate trait upcasting into the new definitions

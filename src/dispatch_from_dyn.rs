@@ -28,7 +28,7 @@ where
 
 impl<'a, T, U> DispatchFromDyn<&'a U> for &'a T
 where
-    T: Unsize<U> + ?Sized,
+    T: Unsize<U> + Sized,
     U: Pointee<Metadata = DynMetadata<U>>,
     // U: ?Sized, std does this, but this is technically wrong? You cannot dispatch from wide pointer to wide pointer
     // as you will lose the initial metadata!
@@ -42,7 +42,7 @@ where
 
 impl<T, U> DispatchFromDyn<Box<U>> for Box<T>
 where
-    T: ?Sized + Unsize<U>,
+    T: Unsize<U> + Sized,
     U: Pointee<Metadata = DynMetadata<U>>,
     // U: ?Sized,
 {
