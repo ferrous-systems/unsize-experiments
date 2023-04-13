@@ -134,13 +134,68 @@ Interesting to see there is that while most impls can make use of `Unsize` as th
 
 open questions:
     - Are there ways to make an implementation of this cause unsoundness? That is are there places where a certain behavior for unsizing coercions is being relied on that may be broken by this?
-    - Look into the unsoundness with regards to `Pin`
 
+### Unsoundness in regards to Pin
+
+Today `Pin` has the following `CoerceUnsized` bound for `Pin`:
+```rs
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P> where P: CoerceUnsized<U> {}
+```
+(Note the missing `U: Deref` bound which I would consider a bug)
+As it turns out, this impl exposes unsoundness as this is effectively exposing `Pin::new_unchecked` without being unsafe itself!
+The unsafety here lies in being able to coerce from a type that impls `Deref<Target=impl !Unpin>` to a type that impls `Deref<Target=impl Unpin>`, effectively enabling to violate the safety contract of the original pinned type in a fully safe context.
+
+There are a few ways this could be fixed, sourced from https://internals.rust-lang.org/t/unsoundness-in-pin/11311/117
+
+> Make `CoerceUnsized` an unsafe trait
+
+To me personally, this feels like the wrong way to tackle it, as now the trait implementor has to be wary of `Pin` (which is notoriously hard to grasp for people), a concept that is more often than not irrelevant to people.
+
+> Add an unsafe marker subtrait for `CoerceUnsized` which controls specifically whether a pinned version of that pointer can be coerced
+
+This would effectively add bounds to the `CoerceUnsized` impl, resulting in something like
+```rs
+unsafe trait PinCoerceUnsized<Target>: CoerceUnsized<Target> {}
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P> where P: PinCoerceUnsized<U> {}
+```
+This "fixes" the unsound `CoerceUnsized` impl, but now pointer that wants `Pin` to be coercible for it has to instead impl this unsafe marker trait (or both) which pretty much boils down to be the same as solution #1 with extra steps
+
+> Change nothing about `CoerceUnsized` but add an unsafe marker trait bound on `Pin::new` and require types that implement that marker + `CoerceUnsized` to be valid to coerce pinned.
+
+This one I don't really understand honestly (as in where we should check what), and it also seems like an easy breaking change to add additional bounds to `Pin::new`
+
+Another alternative that I would personally prefer which would require negative bound reasoning is changing the `CoerceUnsized` impl to the following two (with this repos definition of `CoerceUnsized`):
+```rs
+// Unpin -> Unpin
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
+where
+    P: CoerceUnsized<U>,
+    P: Deref<Target: Unpin>,
+    U: Deref<Target: Unpin>,
+{
+    fn coerce_unsized(self) -> Pin<U> {
+        Pin::new(self.pointer.coerce_unsized())
+    }
+}
+// Pin -> Pin
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
+where
+    P: CoerceUnsized<U>,
+    P: Deref<Target: !Unpin>,
+    U: Deref<Target: !Unpin>,
+{
+    fn coerce_unsized(self) -> Pin<U> {
+        // SAFETY: The new unpin Pin is derived from another unpin Pin, so we the pinned contract is kept up
+        unsafe { Pin::new_unchecked(self.pointer.coerce_unsized()) }
+    }
+}
+```
+with this we effectively fix the problematic conversions from being valid without having to introduce any pinning guarantees to `CoerceUnsized` itself.
+Though unfortunately negative trait bounds themselves come with a bunch of problems, though maybe they can be limited to auto traits. https://github.com/rust-lang/rust/issues/42721
 
 ## DispatchFromDyn
 
 Is here in part due to some other experimentation exploring this trait's design space, not much progress here yet.
-
 
 ## General open questions
 
