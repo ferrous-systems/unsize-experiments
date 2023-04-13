@@ -197,7 +197,14 @@ Though unfortunately negative trait bounds themselves come with a bunch of probl
 
 Is here in part due to some other experimentation exploring this trait's design space, not much progress here yet.
 
-## General open questions
+## Custom Reborrowable Types
 
-- Custom user borrows came up at some point where one of the ideas is to generalize the `CoerceUnsize` trait into something that also allows reborrowing, see https://github.com/rust-lang/rfcs/issues/1403#issuecomment-166980781
-- `dyn_star` can't implement trait upcasting due to it being structural, see https://github.com/rust-lang/rust/issues/104800
+See https://github.com/rust-lang/rfcs/issues/1403#issuecomment-166980781
+
+The idea here is to generalize `CoerceUnsized` as just `Coerce`, modeling more of the magic coercions that the type system currently does via traits.
+With this we could potential model reborrows by having impls of the trait that only differ in their lifetimes and teach borrowck that these should acts re-borrows.
+I feel like with the proposal here invoking actual user functions though, this might be a rather bad call and instead we should look into creating a separate trait that marks reborrows.
+
+## `dyn_star` trait upcasting
+
+See https://github.com/rust-lang/rust/issues/104800
