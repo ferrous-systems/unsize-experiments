@@ -142,13 +142,11 @@ unsafe impl Unsize<str> for alloc::string::String {
 
 /* the compiler will generate impls of the form:
 unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
-    fn target_metadata() -> <dyn Trait as Pointee>::Metadata {
-        intrinsics::vtable::<dyn Trait, T>()
-    }
+    const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata = intrinsics::vtable::<dyn Trait, T>();
 }
 */
 
-/* the compiler will generate impls of the form:
+/* trait upcasting: the compiler will generate impls of the form:
 unsafe impl<trait Trait, trait Super> StableUnsize<dyn Super> for dyn Trait where dyn Trait: Super {
     fn target_metadata() -> <dyn super as Pointee>::Metadata {
         // some compiler magic

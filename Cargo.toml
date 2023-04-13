@@ -10,3 +10,4 @@ edition = "2021"
 [dev-dependencies]
 thin-vec = "0.2.12"
 trybuild = "1.0.79"
+futures = "*"

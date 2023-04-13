@@ -2,11 +2,11 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 #![feature(
-    ptr_metadata,
-    arbitrary_self_types,
     allocator_api,
-    unsafe_pin_internals,
-    trait_upcasting
+    arbitrary_self_types,
+    ptr_metadata,
+    trait_upcasting,
+    unsafe_pin_internals
 )]
 
 extern crate alloc;

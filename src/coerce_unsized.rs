@@ -186,6 +186,7 @@ impl<T: ?Sized + StableUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, 
     }
 }
 
+// FIXME: This impl is unsound!
 // Copied from core library docs:
 // Note: this means that any impl of `CoerceUnsized` that allows coercing from
 // a type that impls `Deref<Target=impl !Unpin>` to a type that impls
@@ -197,6 +198,9 @@ where
     P: CoerceUnsized<U>,
     // interesting one, we would need this for constructing the Pin via `new_unchecked`
     // U: core::ops::Deref,
+    // it's a bit odd that this isn't required tbh, that means it is possible to construct a
+    // Pin to a raw pointer of an unsized object, even though constructing a raw pointer to a sized
+    // one is not possible!
 {
     fn coerce_unsized(self) -> Pin<U> {
         Pin {
@@ -204,6 +208,32 @@ where
         }
     }
 }
+
+/* ideal impls if negative trait bounds were a thing
+// Unpin -> Unpin
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
+where
+    P: CoerceUnsized<U>,
+    P: core::ops::Deref<Target: Unpin>,
+    U: core::ops::Deref<Target: Unpin>,
+{
+    fn coerce_unsized(self) -> Pin<U> {
+        Pin::new(self.pointer.coerce_unsized())
+    }
+}
+// Pin -> Pin
+impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
+where
+    P: CoerceUnsized<U>,
+    P: core::ops::Deref<Target: !Unpin>,
+    U: core::ops::Deref<Target: !Unpin>,
+{
+    fn coerce_unsized(self) -> Pin<U> {
+        // SAFETY: The new unpin Pin is derived from another unpin Pin, so we the pinned contract is kept up
+        unsafe { Pin::new_unchecked(self.pointer.coerce_unsized()) }
+    }
+}
+*/
 
 impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T> {
     fn coerce_unsized(self) -> Cell<U> {
