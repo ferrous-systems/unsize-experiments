@@ -1,3 +1,6 @@
+//! This module experiments with a new CoerceUnsized definition that delegates the actual logic on
+//! deconstructing and constructing the pointers participating in the coercion to user code instead
+//! of having the compiler do it magically.
 use core::alloc::Allocator;
 use core::cell::Cell;
 use core::pin::Pin;

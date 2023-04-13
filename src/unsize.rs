@@ -1,3 +1,5 @@
+//! This module experiments with a new Unsize definition, splitting it into three [`Unsize`],
+//! [`StableUnsize`] and [`ConstUnsize`]. Where [`ConstUnsize`] is effectively today's `Unsize` trait.
 use core::ptr::Pointee;
 
 /// Types that can be "unsized" to a dynamically-sized type.

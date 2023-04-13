@@ -1,5 +1,8 @@
-// use alloc::alloc::Global;
-// use alloc::boxed::Box;
+//! This module experiments with a new DispatchFromDyn definition that delegates the actual logic on
+//! deconstructing and constructing the pointers participating in the method call shim of trait
+//! objects to user code instead of having the compiler do it magically.
+//!
+//! Note this is very much incomplete and has not seen much experimentation.
 
 use core::ptr::{DynMetadata, Pointee};
 

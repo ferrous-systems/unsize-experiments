@@ -1,3 +1,4 @@
+//! A crate for testing alternative `Unsize` and `CoerceUnsize` designs.
 #![no_std]
 #![allow(incomplete_features)]
 #![forbid(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
@@ -13,7 +14,6 @@ extern crate alloc;
 
 pub mod coerce_unsized;
 pub mod dispatch_from_dyn;
-pub mod pointer;
 pub mod unsize;
 
 #[cfg(test)]

@@ -195,7 +195,9 @@ Though unfortunately negative trait bounds themselves come with a bunch of probl
 
 ## DispatchFromDyn
 
-Is here in part due to some other experimentation exploring this trait's design space, not much progress here yet.
+`DispatchFromDyn` is currently bound by `Unsize`, and like `CoerceUnsized`, the actual "resizing" (that is going from the unsized trait object type to the concrete sized type) logic is builtin into the compiler.
+Does the interface of `Unsize` have an effect on this definition?
+Will this trait only be applicable to trait object types or to custom DSTs as well?
 
 ## Custom Reborrowable Types
 
