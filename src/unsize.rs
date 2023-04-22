@@ -2,6 +2,11 @@
 //! [`StableUnsize`], [`FromMetadataUnsize`] and [`ConstUnsize`]. Where [`ConstUnsize`] is effectively today's `Unsize` trait.
 use core::ptr::Pointee;
 
+// Note there was `ConstUnsize` trait before that had an associated constant for the metadata instead
+// but that trait is technically unnecessary, it is effectively `FromMetadataUnsize<Target>` where
+// the target_metadata function is const and `Self::Metadata = ()`. Once const traits land this therefor
+// serves no usecase.
+
 /// Types that can be "unsized" to a dynamically-sized type.
 ///
 /// For example, the sized array type `[i8; 2]` implements `Unsize<[i8]>` and
@@ -77,23 +82,6 @@ where
     fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata;
 }
 
-/// A type that can be unsized solely through compile time information.
-///
-/// # Safety
-///
-/// - The implementation of [`ConstUnsize::TARGET_METADATA`] must return metadata that is valid for
-/// any object that represents the [`Target`] type.
-/// - The implementing type and [`Target`] must be layout compatible.
-// Note this trait is technically unnecessary, it is effectively `FromMetadataUnsize<Target>` where
-// the target_metadata function is const and `Self::Metadata = ()`. Once const traits land this therefor
-// serves no usecase.
-pub unsafe trait ConstUnsize<Target>: FromMetadataUnsize<Target>
-where
-    Target: ?Sized,
-{
-    const TARGET_METADATA: <Target as Pointee>::Metadata;
-}
-
 // StableUnsize implies Unsize!
 // SAFETY: `target_metadata` returns valid metadata for the `target_data_address` result, as per
 // `StableUnsize::target_metadata` implementation
@@ -127,24 +115,11 @@ where
     }
 }
 
-// ConstUnsize implies FromMetadataUnsize!
-// SAFETY:
-// - The implementation of [`FromMetadataUnsize::target_metadata`] returns metadata that is valid for
-// all objects of type `Target` as per `ConstUnsize`
-// - The implementing type and [`Target`] are layout compatible as per `ConstUnsize`.
-unsafe impl<T, Target> FromMetadataUnsize<Target> for T
-where
-    Target: ?Sized,
-    T: ConstUnsize<Target> + ?Sized,
-{
-    fn target_metadata(_: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata {
-        <Self as ConstUnsize<Target>>::TARGET_METADATA
-    }
-}
-
 // SAFETY: `Unsize::target_metadata` returns the same value as `ConstUnsize::TARGET_METADATA`
-unsafe impl<T, const N: usize> ConstUnsize<[T]> for [T; N] {
-    const TARGET_METADATA: <[T] as Pointee>::Metadata = N;
+unsafe impl<T, const N: usize> FromMetadataUnsize<[T]> for [T; N] {
+    fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
+        N
+    }
 }
 
 // SAFETY: The metadata returned by `target_metadata` belongs to the object pointed to by the pointer returned by `target_address`
@@ -175,6 +150,8 @@ unsafe impl Unsize<str> for alloc::string::String {
 unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
     const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata = intrinsics::vtable::<dyn Trait, T>();
 }
+Note that we require T to be sized here! otherwise we would lose the metadata of the source and more importantly,
+`str` could be coerced into trait objects which is not a thing today
 */
 
 /* trait upcasting: the compiler will generate impls of the form:

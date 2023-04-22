@@ -3,7 +3,7 @@ use core::ptr::addr_of;
 use thin_vec::ThinVec;
 
 use crate::coerce_unsized::CoerceUnsized;
-use crate::unsize::{ConstUnsize, FromMetadataUnsize, Unsize};
+use crate::unsize::{FromMetadataUnsize, Unsize};
 
 use super::*;
 
@@ -43,8 +43,12 @@ fn fixed_str() {
     struct FixedString<const N: usize>([u8; N]);
 
     // SAFETY: The metadata returned by `target_metadata` is valid for a `str` object representing the `Self` object
-    unsafe impl<const N: usize> ConstUnsize<str> for FixedString<N> {
-        const TARGET_METADATA: <str as core::ptr::Pointee>::Metadata = N;
+    unsafe impl<const N: usize> FromMetadataUnsize<str> for FixedString<N> {
+        fn target_metadata(
+            (): <Self as core::ptr::Pointee>::Metadata,
+        ) -> <str as core::ptr::Pointee>::Metadata {
+            N
+        }
     }
     let concrete = FixedString(*b"foo");
     let coerced: &str = (&concrete).coerce_unsized();
@@ -105,9 +109,12 @@ fn to_dyn_trait_coerce() {
     }
     // emulate the compiler impl
     // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
-    unsafe impl ConstUnsize<dyn Trait> for i32 {
-        const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
-            core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _);
+    unsafe impl FromMetadataUnsize<dyn Trait> for i32 {
+        fn target_metadata(
+            (): <Self as core::ptr::Pointee>::Metadata,
+        ) -> <dyn Trait as core::ptr::Pointee>::Metadata {
+            core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _)
+        }
     }
     let concrete = 0;
     let coerced: &dyn Trait = (&concrete).coerce_unsized();
@@ -130,9 +137,12 @@ fn to_dyn_trait_coerce_upcast() {
     impl Trait for i32 {}
     // emulate the compiler impl
     // SAFETY: i32 and dyn Trait are layout compatible as i32 implements Trait and the metadata produced is a valid vtable for dyn Trait
-    unsafe impl ConstUnsize<dyn Trait> for i32 {
-        const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
-            core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _);
+    unsafe impl FromMetadataUnsize<dyn Trait> for i32 {
+        fn target_metadata(
+            (): <Self as core::ptr::Pointee>::Metadata,
+        ) -> <dyn Trait as core::ptr::Pointee>::Metadata {
+            core::ptr::metadata::<dyn Trait>(&0 as *const _ as *const _)
+        }
     }
     // emulate the compiler impl
     // SAFETY:
@@ -172,26 +182,32 @@ fn compiler_adt_builtin_coerce() {
     }
     // emulate the compiler impls
     // SAFETY: field is the last field of Foo, so the layout is stable
-    unsafe impl<T, U> ConstUnsize<Foo<U>> for Foo<T>
+    unsafe impl<T, U> FromMetadataUnsize<Foo<U>> for Foo<T>
     where
-        U: ?Sized,                   // bound for the generic param that is being coerced
-        T: ConstUnsize<U>,           // bound for the generic param that is being coerced
-        Bar<T>: ConstUnsize<Bar<U>>, // bound derived from Foo's last field
+        U: ?Sized,                          // bound for the generic param that is being coerced
+        T: FromMetadataUnsize<U>,           // bound for the generic param that is being coerced
+        Bar<T>: FromMetadataUnsize<Bar<U>>, // bound derived from Foo's last field
         Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
     {
-        const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata =
-            <Bar<T> as ConstUnsize<Bar<U>>>::TARGET_METADATA;
+        fn target_metadata(
+            metadata: <Self as core::ptr::Pointee>::Metadata,
+        ) -> <Foo<U> as core::ptr::Pointee>::Metadata {
+            <Bar<T> as FromMetadataUnsize<Bar<U>>>::target_metadata(metadata)
+        }
     }
     // SAFETY: field is the last field of Bar, so the layout is stable
-    unsafe impl<T, U> ConstUnsize<Bar<U>> for Bar<T>
+    unsafe impl<T, U> FromMetadataUnsize<Bar<U>> for Bar<T>
     where
-        U: ?Sized,         // bound for the generic param that is being coerced
-        T: ConstUnsize<U>, // bound for the generic param that is being coerced
-        T: ConstUnsize<U>, // bound derived from Bar's last field
+        U: ?Sized,                // bound for the generic param that is being coerced
+        T: FromMetadataUnsize<U>, // bound for the generic param that is being coerced
+        T: FromMetadataUnsize<U>, // bound derived from Bar's last field
         Bar<U>: core::ptr::Pointee<Metadata = <U as core::ptr::Pointee>::Metadata>, // bound requiring the metadata of the struct and its field to be the same
     {
-        const TARGET_METADATA: <Bar<U> as core::ptr::Pointee>::Metadata =
-            <T as ConstUnsize<U>>::TARGET_METADATA;
+        fn target_metadata(
+            metadata: <Self as core::ptr::Pointee>::Metadata,
+        ) -> <Bar<U> as core::ptr::Pointee>::Metadata {
+            <T as FromMetadataUnsize<U>>::target_metadata(metadata)
+        }
     }
     let concrete = Foo {
         field: Bar { field: [0; 10] },
@@ -207,9 +223,12 @@ fn coerce_type_metadata() {
 
     impl Trait for Struct {}
     // SAFETY: This would be a compiler provided impl
-    unsafe impl ConstUnsize<dyn Trait> for Struct {
-        const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata =
-            core::ptr::metadata::<dyn Trait>(&Struct as *const _ as *const _);
+    unsafe impl FromMetadataUnsize<dyn Trait> for Struct {
+        fn target_metadata(
+            (): <Self as core::ptr::Pointee>::Metadata,
+        ) -> <dyn Trait as core::ptr::Pointee>::Metadata {
+            core::ptr::metadata::<dyn Trait>(&Struct as *const _ as *const _)
+        }
     }
 
     // array -> slice
