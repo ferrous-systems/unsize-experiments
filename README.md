@@ -7,8 +7,8 @@ Today `Vec<T>` implements `Deref<Target = [T]>` for convenience as this allows d
 
 ## Unsize
 
-The `Unsize` trait has been split into 3 new traits: `ConstUnsize`, `StableUnsize` and `Unsize`.
-The three traits form a hierarchy where `ConstUnsize` is the most specific and `Unsize` the least specific, i.e `ConstUnsize` requires `StableUnsize` requires `Unsize`.
+The `Unsize` trait has been split into 3 new traits: `FromMetadataUnsize`, `StableUnsize` and `Unsize`.
+The three traits form a hierarchy where `FromMetadataUnsize` is the most specific and `Unsize` the least specific, i.e `FromMetadataUnsize` requires `StableUnsize` requires `Unsize`.
 
 ### Unsize
 
@@ -70,44 +70,41 @@ where
 
 Implementing `StableUnsize` will automatically implement `Unsize` (via a blanket impl) for the implementing type with a correct `target_data_address` implementation that keeps the addition invariant.
 
-The second trait that is needed is `ConstUnsize` which is defined as:
+The second trait that is needed is `FromMetadataUnsize` which is defined as:
 
 ```rs
-/// A type that can be unsized solely through compile time information.
-///
 /// # Safety
 ///
-/// - The implementation of [`ConstUnsize::TARGET_METADATA`] must return metadata that is valid for
-/// any object that represents the [`Target`] type.
+/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the `self` parameter
 /// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait ConstUnsize<Target>: StableUnsize<Target>
+pub unsafe trait FromMetadataUnsize<Target>: StableUnsize<Target>
 where
-    // ideally this would be !Sized
     Target: ?Sized,
 {
-    const TARGET_METADATA: <Target as Pointee>::Metadata;
+    fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata;
 }
+
 ```
 
-Implementing `ConstUnsize` will automatically implement `StableUnsize` (via a blanket impl) for the implementing type with the `target_metadata` method delegating to the `TARGET_METADATA` const.
+Implementing `FromMetadataUnsize` will automatically implement `StableUnsize` (via a blanket impl) for the implementing type with the `target_metadata` method delegating to the `TARGET_METADATA` const.
 
-`ConstUnsize` effectively mimics today's `Unsize` trait, which seeds the metadata for unsizing from compile time information provided by the compilers generated implementations, as such the compiler generated implementations will be emitted for `ConstUnsize` specifically.
+`FromMetadataUnsize` in a sense mimics today's `Unsize` trait, which seeds the metadata for unsizing from compile time information provided by the compilers generated implementations, as such the compiler generated implementations will be emitted for `FromMetadataUnsize` specifically with this RFC.
 
 The compiler today emits 3 "kinds" of implementations for `Unsize`, which would be changed in the following way with this proposal:
-- `[T; N]: Unsize<[T]>`: With `ConstUnsize`, this impl can now be written in source in the core library
-- `T: Unsize<dyn Trait>` where `T: Trait`: The compiler will continue emitting these but for `ConstUnsize` instead with the metadata const filled appropriately.
+- `[T; N]: Unsize<[T]>`: With `FromMetadataUnsize`, this impl can now be written in source in the core library
+- `T: Unsize<dyn Trait>` where `T: Trait`: The compiler will continue emitting these but for `FromMetadataUnsize` instead.
 - And lastly the most complex rule which needs to be kept for backwards compat reasons:
-    Structs `Foo<..., T, ...>` implement `ConstUnsize<Foo<..., U, ...>>` if all of these conditions are met:
-    - `T: ConstUnsize<U>`.
+    Structs `Foo<..., T, ...>` implement `FromMetadataUnsize<Foo<..., U, ...>>` if all of these conditions are met:
+    - `T: FromMetadataUnsize<U>`.
     - Only the last field of `Foo` has a type involving `T`.
-    - `Bar<T>: ConstUnsize<Bar<U>>`, where `Bar<T>` stands for the actual type of that last field.
+    - `Bar<T>: FromMetadataUnsize<Bar<U>>`, where `Bar<T>` stands for the actual type of that last field.
+- trait upcasting: While currently unstable, this can now be modeled with `FromMetadataUnsize`, as this unsizing coercion only requires access to the source vtable.
 
-There is actually another impl the compiler emits which is used for trait upcasting (unstable feature), interestingly though, this one we cannot replace with `ConstUnsize` as upcasting might need to access the vtable of the subtrait! So here we have to emit an impl that uses `StableUnsize`.
-
-These compiler provided implementations have very rought impl skeletons written in pseudorust at the end of the [unsize.rs](src/unsize.rs) file.
+These compiler provided implementations have very rough impl skeletons written in pseudorust at the end of the [unsize.rs](src/unsize.rs) file.
 
 open questions:
-    - Should it be allowed to change the target address, that is does `Unsize` make sense or is `StableUnsize` and `ConstUnsize` all that we need? Disallowing this would prevent `Vec<T>: [T]` as well as some other class of implementations (see for example the test `fixed_str_dyn_len` in [tests.rs](src/tests.rs))
+    - Should it be allowed to change the target address, that is does `Unsize` make sense or is `StableUnsize` and `FromMetadataUnsize` all that we need? Disallowing this would prevent `Vec<T>: [T]` as well as some other class of implementations (see for example the test `fixed_str_dyn_len` in [tests.rs](src/tests.rs))
     - Do the functions on the traits make sense as defined?
     - (the use of arbitrary self types for the self pointers was on a whim, whether we make them associated functions or not is not really too relevant)
     - ideally the `Target: ?Sized` bound should be `Target: !Sized`, that is effectively forbidding unsizing implementations to sized targets, but this is not expressible today. The compiler could easily reject those kinds of impls anyways though.
@@ -128,8 +125,8 @@ For example implementations of the majority of core/alloc/std implementations th
 
 Interesting to see there is that while most impls can make use of `Unsize` as the trait bounds, some require the more specific traits to work as was mentioned above, notably:
 - `Arc<T>`/`Rc<T>`/`Box<T>` require `StableUnsize` as the are owning the allocation
-- `TypeMetadata<T>` requires `ConstUnsize` as there is no actual object stored to unsize on
-- `*const T`/`*mut T` require `ConstUnsize` as the pointers may not actually be valid, so we can't access the pointee to do the unsizing on
+- `TypeMetadata<T>` requires `FromMetadataUnsize` as there is no actual object stored to unsize on, only its metadata
+- `*const T`/`*mut T` require `FromMetadataUnsize` as the pointers may not actually be valid, so we can't access the pointee to do the unsizing on
 
 
 open questions:
