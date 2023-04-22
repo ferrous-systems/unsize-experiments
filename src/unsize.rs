@@ -1,5 +1,5 @@
-//! This module experiments with a new Unsize definition, splitting it into three [`Unsize`],
-//! [`StableUnsize`] and [`ConstUnsize`]. Where [`ConstUnsize`] is effectively today's `Unsize` trait.
+//! This module experiments with a new Unsize definition, splitting it into four [`Unsize`],
+//! [`StableUnsize`], [`FromMetadataUnsize`] and [`ConstUnsize`]. Where [`ConstUnsize`] is effectively today's `Unsize` trait.
 use core::ptr::Pointee;
 
 /// Types that can be "unsized" to a dynamically-sized type.
@@ -57,13 +57,24 @@ where
 /// - The implementing type and [`Target`] must be layout compatible.
 pub unsafe trait StableUnsize<Target>: Unsize<Target>
 where
-    // ideally this would be !Sized
     Target: ?Sized,
 {
     /// # Safety
     ///
     /// `self` must point to a valid instance of `Self`
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
+}
+
+/// # Safety
+///
+/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the `self` parameter
+/// - The implementing type and [`Target`] must be layout compatible.
+pub unsafe trait FromMetadataUnsize<Target>: StableUnsize<Target>
+where
+    Target: ?Sized,
+{
+    fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata;
 }
 
 /// A type that can be unsized solely through compile time information.
@@ -73,9 +84,11 @@ where
 /// - The implementation of [`ConstUnsize::TARGET_METADATA`] must return metadata that is valid for
 /// any object that represents the [`Target`] type.
 /// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait ConstUnsize<Target>: StableUnsize<Target>
+// Note this trait is technically unnecessary, it is effectively `FromMetadataUnsize<Target>` where
+// the target_metadata function is const and `Self::Metadata = ()`. Once const traits land this therefor
+// serves no usecase.
+pub unsafe trait ConstUnsize<Target>: FromMetadataUnsize<Target>
 where
-    // ideally this would be !Sized
     Target: ?Sized,
 {
     const TARGET_METADATA: <Target as Pointee>::Metadata;
@@ -98,17 +111,33 @@ where
         self.cast()
     }
 }
-// ConstUnsize implies StableUnsize!
+
+// FromMetadataUnsize implies StableUnsize!
 // SAFETY:
 // - The implementation of [`StableUnsize::target_metadata`] returns metadata that is valid for
+// all objects of type `Target` as per `FromMetadataUnsize`
+// - The implementing type and [`Target`] are layout compatible as per `FromMetadataUnsize`.
+unsafe impl<T, Target> StableUnsize<Target> for T
+where
+    Target: ?Sized,
+    T: FromMetadataUnsize<Target> + ?Sized,
+{
+    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
+        <Self as FromMetadataUnsize<Target>>::target_metadata(core::ptr::metadata(self))
+    }
+}
+
+// ConstUnsize implies FromMetadataUnsize!
+// SAFETY:
+// - The implementation of [`FromMetadataUnsize::target_metadata`] returns metadata that is valid for
 // all objects of type `Target` as per `ConstUnsize`
 // - The implementing type and [`Target`] are layout compatible as per `ConstUnsize`.
-unsafe impl<T, Target> StableUnsize<Target> for T
+unsafe impl<T, Target> FromMetadataUnsize<Target> for T
 where
     Target: ?Sized,
     T: ConstUnsize<Target> + ?Sized,
 {
-    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
+    fn target_metadata(_: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata {
         <Self as ConstUnsize<Target>>::TARGET_METADATA
     }
 }
@@ -149,8 +178,8 @@ unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
 */
 
 /* trait upcasting: the compiler will generate impls of the form:
-unsafe impl<trait Trait, trait Super> StableUnsize<dyn Super> for dyn Trait where dyn Trait: Super {
-    fn target_metadata() -> <dyn super as Pointee>::Metadata {
+unsafe impl<trait Trait, trait Super> FromMetadataUnsize<dyn Super> for dyn Trait where dyn Trait: Super {
+    unsafe fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <dyn super as Pointee>::Metadata {
         // some compiler magic
     }
 }

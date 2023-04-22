@@ -3,7 +3,7 @@ use core::ptr::addr_of;
 use thin_vec::ThinVec;
 
 use crate::coerce_unsized::CoerceUnsized;
-use crate::unsize::{ConstUnsize, StableUnsize, Unsize};
+use crate::unsize::{ConstUnsize, FromMetadataUnsize, Unsize};
 
 use super::*;
 
@@ -136,18 +136,28 @@ fn to_dyn_trait_coerce_upcast() {
     }
     // emulate the compiler impl
     // SAFETY:
-    unsafe impl StableUnsize<dyn Super> for dyn Trait {
-        unsafe fn target_metadata(
-            self: *const Self,
+    unsafe impl FromMetadataUnsize<dyn Super> for dyn Trait {
+        fn target_metadata(
+            _: <Self as core::ptr::Pointee>::Metadata,
         ) -> <dyn Super as core::ptr::Pointee>::Metadata {
-            core::ptr::metadata::<dyn Super>(self as *const dyn Super)
+            // This isn't really correct obviously, but there is no proper to emulate what the compiler does here
+            core::ptr::metadata(&0i32 as &dyn Super)
         }
     }
     let concrete = 0;
+    // ref
     let coerced: &dyn Trait = (&concrete).coerce_unsized();
     let coerced: &dyn Super = coerced.coerce_unsized();
     assert_eq!(
         coerced.as_super_string(),
+        alloc::string::ToString::to_string(&concrete)
+    );
+    // raw ptr
+    let coerced: *const dyn Trait = (&concrete as *const i32).coerce_unsized();
+    let coerced: *const dyn Super = coerced.coerce_unsized();
+    assert_eq!(
+        // SAFETY: The pointer is still valid
+        unsafe { (*coerced).as_super_string() },
         alloc::string::ToString::to_string(&concrete)
     );
 }

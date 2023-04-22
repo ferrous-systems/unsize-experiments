@@ -9,7 +9,7 @@ use core::ptr;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
-use crate::unsize::{ConstUnsize, StableUnsize, Unsize};
+use crate::unsize::{FromMetadataUnsize, StableUnsize, Unsize};
 use crate::TypedMetadata;
 /// Trait that indicates that this is a pointer or a wrapper for one,
 /// where unsizing can be performed on the pointee.
@@ -47,7 +47,10 @@ use crate::TypedMetadata;
 // TODO: This definition currently permits users to do some funky stuff that isn't using unsizing at all! Can we somehow restrict that?
 // There are basically two kinds of implementations we want to allow
 // - Delegation a la Cell or Pin (wrapper types), where we do the coercion for the inner type and then rewrap it
-// - The actual coercion, which happens on pointer types
+// - The actual coercion, which happens on pointer types,
+//
+//  as such, the compiler should verify that either the impl is a delegation using a trait bound on CoerceUnsized
+//  or find a bound that consists of one of the Unsizing traits
 //
 // assuming std had a Pointer trait, we could restrict Self and Target to this trait, and in case for Cell and Pin (and similar),
 // have conditional implementations for this trait on them if their inner type also implements the trait, as effectively they still act like pointers
@@ -143,26 +146,35 @@ impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*const U> for &'a T {
 }
 
 // *mut T -> *mut U
-// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
+// Note the use of FromMetadataUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {
     fn coerce_unsized(self) -> *mut U {
-        ptr::from_raw_parts_mut(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts_mut(
+            self.cast(),
+            <T as FromMetadataUnsize<U>>::target_metadata(core::ptr::metadata(self)),
+        )
     }
 }
 
 // *mut T -> *const U
-// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
+// Note the use of FromMetadataUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *mut T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts(
+            self.cast(),
+            <T as FromMetadataUnsize<U>>::target_metadata(core::ptr::metadata(self)),
+        )
     }
 }
 
 // *const T -> *const U
-// Note the use of ConstUnsize! We can't deref the pointer as we do not know whether it is live
-impl<T: ?Sized + ConstUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
+// Note the use of FromMetadataUnsize! We can't deref the pointer as we do not know whether it is live
+impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *const T {
     fn coerce_unsized(self) -> *const U {
-        ptr::from_raw_parts(self.cast(), <T as ConstUnsize<U>>::TARGET_METADATA)
+        ptr::from_raw_parts(
+            self.cast(),
+            <T as FromMetadataUnsize<U>>::target_metadata(core::ptr::metadata(self)),
+        )
     }
 }
 
@@ -261,10 +273,10 @@ impl<T: ?Sized + StableUnsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
 
 impl<T, U> CoerceUnsized<TypedMetadata<U>> for TypedMetadata<T>
 where
-    T: ?Sized + ConstUnsize<U>,
+    T: ?Sized + FromMetadataUnsize<U>,
     U: ?Sized,
 {
     fn coerce_unsized(self) -> TypedMetadata<U> {
-        TypedMetadata(T::TARGET_METADATA)
+        TypedMetadata(<T as FromMetadataUnsize<U>>::target_metadata(self.0))
     }
 }
