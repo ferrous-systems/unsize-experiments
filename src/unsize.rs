@@ -1,5 +1,5 @@
 //! This module experiments with a new Unsize definition, splitting it into four [`Unsize`],
-//! [`StableUnsize`], [`FromMetadataUnsize`] and [`ConstUnsize`]. Where [`ConstUnsize`] is effectively today's `Unsize` trait.
+//! [`StableUnsize`] and [`FromMetadataUnsize`].
 use core::ptr::Pointee;
 
 // Note there was `ConstUnsize` trait before that had an associated constant for the metadata instead
@@ -115,7 +115,7 @@ where
     }
 }
 
-// SAFETY: `Unsize::target_metadata` returns the same value as `ConstUnsize::TARGET_METADATA`
+// SAFETY: `Unsize::target_metadata` returns the same value as `FromMetadataUnsize::TARGET_METADATA`
 unsafe impl<T, const N: usize> FromMetadataUnsize<[T]> for [T; N] {
     fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
         N
@@ -147,8 +147,10 @@ unsafe impl Unsize<str> for alloc::string::String {
 }
 
 /* the compiler will generate impls of the form:
-unsafe impl<trait Trait, T: Trait> ConstUnsize<dyn Trait> for T {
-    const TARGET_METADATA: <dyn Trait as core::ptr::Pointee>::Metadata = intrinsics::vtable::<dyn Trait, T>();
+unsafe impl<trait Trait, T: Trait> FromMetadataUnsize<dyn Trait> for T {
+    fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <dyn Trait as Pointee>::Metadata {
+        // magic
+    }
 }
 Note that we require T to be sized here! otherwise we would lose the metadata of the source and more importantly,
 `str` could be coerced into trait objects which is not a thing today
@@ -164,16 +166,18 @@ unsafe impl<trait Trait, trait Super> FromMetadataUnsize<dyn Super> for dyn Trai
 
 // Note that this impl is observable on stable rust already
 /* the compiler will generate impls of the form:
-unsafe impl<T, U> ConstUnsize<Foo<U>> for Foo<T>
+unsafe impl<T, U> FromMetadataUnsize<Foo<U>> for Foo<T>
 where
     U: ?Sized,
     // bound for the generic param that is being coerced
-    T: ConstUnsize<U>,
+    T: FromMetadataUnsize<U>,
     // bound for the type of the last field that is being coerced
-    Bar<T>: ConstUnsize<Bar<U>>,
+    Bar<T>: FromMetadataUnsize<Bar<U>>,
     // demand that the metadata for Foo is the same as its last field
     Foo<U>: core::ptr::Pointee<Metadata = <Bar<U> as core::ptr::Pointee>::Metadata>,
 {
-    const TARGET_METADATA: <Foo<U> as core::ptr::Pointee>::Metadata = <Bar<T> as ConstUnsize<Bar<U>>>::TARGET_METADATA;
+    fn target_metadata(meta: <Self as Pointee>::Metadata) -> <Foo<U> as Pointee>::Metadata {
+        <Bar<T> as FromMetadataUnsize<Bar<U>>>::target_metadata(meta)
+    }
 }
 */
