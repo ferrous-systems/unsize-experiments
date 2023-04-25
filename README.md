@@ -164,19 +164,21 @@ where
 Here we actually are required to bound this implementation with `StableUnsize` (or `FromMetadataUnsize`), as the target address may not change.
 The reason for that is that the `Arc` owns the allocation but also because it puts the ref counts at a certain offset inside of the allocation, so a changing address would make it impossible to correctly touch up on those anymore.
 
-These new definitions allow some more implementations of `CoerceUnsized` which were not previously possible, an example a
-
-
-Explain the proposal as if it was already included in the language and you were teaching it to another Rust programmer. That generally means:
-
-<!-- - Introducing new named concepts. -->
-<!-- - Explaining the feature largely in terms of examples. -->
-- Explaining how Rust programmers should *think* about the feature, and how it should impact the way they use Rust. It should explain the impact as concretely as possible.
-- If applicable, provide sample error messages, deprecation warnings, or migration guidance.
-<!-- - If applicable, describe the differences between teaching this to existing Rust programmers and new Rust programmers. -->
-<!-- - Discuss how this impacts the ability to read, understand, and maintain Rust code. Code is read and modified far more often than written; will the proposed feature make code easier to maintain? -->
-
-<!-- For implementation-oriented RFCs (e.g. for compiler internals), this section should focus on how compiler contributors should think about the change, and give examples of its concrete impact. For policy RFCs, this section should provide an example-driven introduction to the policy, and explain its impact in concrete terms. -->
+These new definitions allow some more implementations of `CoerceUnsized` which were not previously possible, an example would be the following:
+```rs
+impl<T, U> CoerceUnsized<Option<U>> for Option<T>
+where
+    T: CoerceUnsized<U>,
+{
+    fn coerce_unsized(self) -> Option<U> {
+        match self {
+            Option::Some(t) => Option::Some(t.coerce_unsized()),
+            Option::None => Option::None,
+        }
+    }
+}
+```
+With such an impl, `Option<&[T; N]>` could coerce to `Option<&[T]>`.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -443,7 +445,6 @@ It would make much more sense to fix the unsound `CoerceUnsized` implementation 
 That is given the current implementation of (with the new definition of the trait):
 ```rs
 
-// FIXME: This impl is unsound!
 // Copied from core library docs:
 // Note: this means that any impl of `CoerceUnsized` that allows coercing from
 // a type that impls `Deref<Target=impl !Unpin>` to a type that impls
@@ -502,15 +503,6 @@ See the following issue for context: https://github.com/rust-lang/rfcs/issues/14
 In the linked issue the idea was to generalize `CoerceUnsized` as a general `Coerce` trait.
 The author of this RFC believes that to be a bad call given the new design of the traits, as they now invoke user code with reborrows supposed to being no-ops.
 
-
-This is the technical portion of the RFC. Explain the design in sufficient detail that:
-
-- Its interaction with other features is clear.
-- It is reasonably clear how the feature would be implemented.
-- Corner cases are dissected by example.
-
-The section should return to the examples given in the previous section, and explain more fully how the detailed proposal makes those examples work.
-
 # Drawbacks
 [drawbacks]: #drawbacks
 
@@ -521,11 +513,11 @@ Unsizing coercions are now able to run arbitrary user code, placing it into a si
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-- The design proposed here is (almost) maximally flexible, allowing most use cases to be covered at the expense of multiple unsizing traits by giving full control of how the unsizing happens, while the `Unsize` trait hierarchy allows for depending on certain requirements like not deriving the metadata from the data pointer or preventing the data pointer to change.
+- The design proposed here is (almost) maximally flexible, allowing most use cases to be covered at the expense of multiple unsizing traits by giving full control of how the unsizing happens. The `Unsize` trait hierarchy allows for bounding on certain requirements allowing safe implementations of `CoerceUnsized` with the new flexibilities in place.
 
 - While `StableUnsize` is required for `Box` to be unsize coercible and `FromMetadataUnsize` is required for trait upcasting due to raw pointers allowing it, the general `Unsize` trait might not necessarily be needed, if use cases like `Vec<T>: Unsize<[T]>` are deemed unnecessary. This would simplify the proposal significantly.
 
-<!-- TODO - What is the impact of not doing this? -->
+- Alternatively, the design could be limited to the proposed `FromMetadataUnsize`, which is effectively today's `Unsize` trait with the addition of the `target_metadata` function. Doing so would still allow users to implement the trait and specifying how to derive the metadata from the source metadata opposed to having the compiler hardcode certain implementations of the trait. Introducing the other traits would then still be an option for the future, as they can be added as a supertrait of this trait with a corresponding blanket impl to prevent breakage.
 
 # Prior art
 [prior-art]: #prior-art

@@ -277,18 +277,6 @@ fn coerce_ref_option_inner() {
         None,
     }
 
-    impl<T, U> CoerceUnsized<Option<U>> for Option<T>
-    where
-        T: CoerceUnsized<U>,
-    {
-        fn coerce_unsized(self) -> Option<U> {
-            match self {
-                Option::Some(t) => Option::Some(t.coerce_unsized()),
-                Option::None => Option::None,
-            }
-        }
-    }
-
     // T: Vec<T>
     // U: [U]
     impl<'a, 'b, T, U: ?Sized> CoerceUnsized<Option<&'b U>> for &'a Option<T>
