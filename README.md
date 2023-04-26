@@ -28,9 +28,11 @@ This on one hand, has the downside of being very magical, as the majority of the
 
 Due to this rigidness of the current traits, it is also not uncommon to see types implement `Deref` instead of `Unsize` to get deref coercions instead of unsizing coercions which can happen in similar places as unsizing even if the type is semantically not a pointer (as was desired by `Deref`).
 
+    TODO: Examples of the `Deref` being used and it would be better suited for `Unsize`.
+
 This RFC attempts to make these rules more flexible by also allowing user implementations of the traits that define how the metadata is derived.
 
-TODO: Flesh this out, guide level explanation also needs more examples
+    TODO: Flesh this out, guide level explanation also needs more examples
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -174,7 +176,7 @@ With such an impl, `Option<&[T; N]>` could coerce to `Option<&[T]>`.
 
 ## `Unsize` changes
 
-The `Unsize` trait is being split into three unsafe traits forming a hierarchy:
+The `Unsize` trait is being split into two unsafe traits forming a hierarchy:
 
 
 ### `Unsize`
@@ -202,7 +204,7 @@ where
 }
 ```
 
-This trait forms the top of the hierarchy of the 3 unsizing traits.
+This trait forms the top of the hierarchy of the two unsizing traits.
 Implementors of this trait can freely extract the metadata and address from the object that is being unsized.
 
 ### `FromMetadataUnsize`
@@ -240,9 +242,30 @@ This also drops the `?Sized` bound on `Target`, as returning unsized values is n
 
 In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce.
 For an implementation to be valid, one of the following must hold:
-- Both `Self` and `Target` are references or raw pointers to differing generic parameters where the parameter `T` of `Self` has `T: UnsizeTrait<U>` bound with `U` being the generic parameter of `Target` and `UnsizeTrait` being one of the 3 unsize traits.
-- `Self` and `Target` must have the same type constructor, and only vary in a single type parameter. The type parameter of `Self` must then have a `CoerceUnsized<U>` bound where `U` is the differing type parameter of `Target`. Example: `impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T>`
-- `Self` and `Target` must have the same type constructor, and only vary in a single type parameter. The type parameter of `Self` must then have a `UnsizeTrait<U>` bound where `U` is the differing type parameter of `Target` and `UnsizeTrait` is one of the three unsize traits. Example: `impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> `
+- `Self` and `Target`
+    - references or raw pointers to different generic parameters
+    - parameter `T` of `Self` has `T: UnsizeTrait<U>` bound
+    - parameter `U` of `Target`
+    - `UnsizeTrait` one of the two unsize traits
+- `Self` and `Target`
+    - must have nearly same type constructor, varying in a single type parameter
+    - type parameter of `Self` must have a `CoerceUnsized<U>` bound
+    - where `U` is the differing type parameter of `Target`
+    - Example:
+        ```rust
+        impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>>
+            for Cell<T>
+        ```
+- `Self` and `Target`
+    - must have nearly same type constructor, varying in a single type parameter
+    - type parameter of `Self` must have a `UnsizeTrait<U>` bound
+    - where `U` is the differing type parameter of `Target`
+    - `UnsizeTrait` is one of the two unsize traits
+    - Example:
+        ```rust
+        impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>>
+            for Box<T, A>
+        ```
 
 ## Implementations provided by the standard library
 
@@ -316,9 +339,17 @@ unsafe impl Unsize<str> for String {
 
 All current implementations provided by the standard library suite for today's `CoerceUnsized` trait except for the listed following ones will be reimplemented with the new definition of the trait while bounded by the new `Unsize` trait, making them more permissive.
 
-The implementations for `*const T`, `*mut T` and `NonNull<T>` will be bounded by `FromMetadataUnsize`, as their data pointer cannot be read from safely.
-The implementation for `Box<T>`, `Rc<T>`, `Arc<T>`, `rc::Weak<T>` and `sync::Weak<T>` will be bounded by `FromMetadataUnsize`, as the pointer is effectively owned and cannot change.
-The implementation for `Pin<T>` will be elaborated on in the later parts of this RFC.
+| Type            | New Bounded By         | Reason                                         |
+|:----------------|:-----------------------|:-----------------------------------------------|
+| `*const T`      | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
+| `*mut T`        | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
+| `NonNull<T>`    | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
+| `Box<T>`        | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
+| `Rc<T>`         | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
+| `Arc<T>`        | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
+| `rc::Weak<T>`   | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
+| `sync::Weak<T>` | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
+| `Pin<T>`        | To be elaborated later | TBD                                            |
 
 ## Implementations provided by the compiler
 
