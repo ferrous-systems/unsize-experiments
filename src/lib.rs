@@ -7,7 +7,8 @@
     arbitrary_self_types,
     ptr_metadata,
     trait_upcasting,
-    unsafe_pin_internals
+    unsafe_pin_internals,
+    strict_provenance
 )]
 
 extern crate alloc;

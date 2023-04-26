@@ -1,5 +1,4 @@
-//! This module experiments with a new Unsize definition, splitting it into four [`Unsize`],
-//! [`StableUnsize`] and [`FromMetadataUnsize`].
+//! This module experiments with a new Unsize definition, splitting it into two [`Unsize`] and [`FromMetadataUnsize`].
 use core::ptr::Pointee;
 
 // Note there was `ConstUnsize` trait before that had an associated constant for the metadata instead
@@ -53,65 +52,35 @@ where
     unsafe fn target_data_address(self: *const Self) -> *const ();
 }
 
-/// Same as [`Unsize`] but the target data address may not change.
-///
 /// # Safety
 ///
-/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
-/// the object pointed to by the `self` parameter
+/// - The implementation of [`FromMetadataUnsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the `self` parameter.
+///     - TODO(describe better): valid here means, it must span then entire allocation
 /// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait StableUnsize<Target>: Unsize<Target>
-where
-    Target: ?Sized,
-{
-    /// # Safety
-    ///
-    /// `self` must point to a valid instance of `Self`
-    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
-}
-
-/// # Safety
-///
-/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
-/// the object pointed to by the `self` parameter
-/// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait FromMetadataUnsize<Target>: StableUnsize<Target>
+pub unsafe trait FromMetadataUnsize<Target>: Unsize<Target>
 where
     Target: ?Sized,
 {
     fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <Target as Pointee>::Metadata;
 }
 
-// StableUnsize implies Unsize!
-// SAFETY: `target_metadata` returns valid metadata for the `target_data_address` result, as per
-// `StableUnsize::target_metadata` implementation
-unsafe impl<T, Target> Unsize<Target> for T
-where
-    Target: ?Sized,
-    T: StableUnsize<Target> + ?Sized,
-{
-    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
-        // SAFETY: `self` points to a valid object of Self as per the calling contract of `Unsize::target_metadata`
-        unsafe { <Self as StableUnsize<Target>>::target_metadata(self) }
-    }
-
-    unsafe fn target_data_address(self: *const Self) -> *const () {
-        self.cast()
-    }
-}
-
-// FromMetadataUnsize implies StableUnsize!
+// FromMetadataUnsize implies Unsize!
 // SAFETY:
-// - The implementation of [`StableUnsize::target_metadata`] returns metadata that is valid for
+// - The implementation of [`FromMetadataUnsize::target_metadata`] returns metadata that is valid for
 // all objects of type `Target` as per `FromMetadataUnsize`
 // - The implementing type and [`Target`] are layout compatible as per `FromMetadataUnsize`.
-unsafe impl<T, Target> StableUnsize<Target> for T
+unsafe impl<T, Target> Unsize<Target> for T
 where
     Target: ?Sized,
     T: FromMetadataUnsize<Target> + ?Sized,
 {
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
         <Self as FromMetadataUnsize<Target>>::target_metadata(core::ptr::metadata(self))
+    }
+
+    unsafe fn target_data_address(self: *const Self) -> *const () {
+        self.cast()
     }
 }
 

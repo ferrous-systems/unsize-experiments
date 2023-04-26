@@ -23,8 +23,12 @@ Move the unsizing logic out of the compiler into library source, allowing for a 
 [motivation]: #motivation
 
 Currently unsizing in Rust is very rigid, only allowed in very specific scenarios permitted by the rules surrounding the current `Unsize` and `CoerceUnsized` traits and it's automatic implementations by the compiler.
-Due to this rigidness of the current traits, it is also not uncommon to see types implement `Deref` instead `Unsize` to get deref coercions instead of unsizing coercions which can happen in the same places (and more) as unsizing even if the type is semantically not a pointer.
-This RFC attempts to make these rules more flexible by also allowing user implementations of the traits.
+
+This on one hand, has the downside of being very magical, as the majority of the logic happens inside the compiler opposed to the source code and it also prevents certain unsizing implementations from being doable today
+
+Due to this rigidness of the current traits, it is also not uncommon to see types implement `Deref` instead of `Unsize` to get deref coercions instead of unsizing coercions which can happen in similar places as unsizing even if the type is semantically not a pointer (as was desired by `Deref`).
+
+This RFC attempts to make these rules more flexible by also allowing user implementations of the traits that define how the metadata is derived.
 
 TODO: Flesh this out, guide level explanation also needs more examples
 
@@ -33,14 +37,15 @@ TODO: Flesh this out, guide level explanation also needs more examples
 
 ## Unsize
 
-Unsizing relationships between two types can be defined by implementing one of the three unsizing traits `Unsize`, `StableUnsize` or `FromMetadataUnsize` for a type and its target unsized type.
+Unsizing relationships between two types can be defined by implementing one of the two unsizing traits `Unsize` or `FromMetadataUnsize` for a type and its target unsized type.
 These implementations describe how the unsizing has to be performed by specifying what the resulting metadata value of the unsized type is, as well as optionally specifying the address to the unsized object.
-Depending on the need of the unsizing relationship, either of three traits can be used with `FromMetadataUnsize` implying `StableUnsize` and `StableUnsize` implying `Unsize`.
+Depending on the need of the unsizing relationship, either of the two traits can be used with `FromMetadataUnsize` implying `Unsize`.
 
 ### Unsize
 
-`Unsize` is used, if the metadata comes from the object that is being unsized while also requiring to change the address of the object.
-An example for this type of unsizing is `Vec<T>` to `[T]` unsizing, which redirects the pointer to the contained allocation within:
+`Unsize` is used, if the metadata comes from the data of the object that is being unsized and/or requiring to change the address of the unsized object.
+In general, this kind of unsizing is unfit for owned objects due to the possibility of the data address changing.
+An example for this type of unsizing is `Vec<T>` to `[T]` unsizing, which redirects the pointer to the contained allocation within and which needs to access the vec's len for the metadata:
 
 ```rs
 // SAFETY: The metadata returned by `target_metadata` belongs to the slice pointed to by the pointer returned by `target_address`.
@@ -52,23 +57,6 @@ unsafe impl<T> Unsize<[T]> for Vec<T> {
     unsafe fn target_data_address(self: *const Self) -> *const () {
         // SAFETY: self is a valid pointer per calling contract
         unsafe { (*self).buf.ptr.as_ptr().cast() }
-    }
-}
-```
-
-### StableUnsize
-
-`StableUnsize` is used, if the metadata comes from the object that is being unsized without changing the address of the object.
-An example for this type of unsizing is trait upcasting which potentially requires reading from the vtable of the original object:
-```rs
-trait Super {}
-trait Sub: Super {}
-// SAFETY: The metadata returned by `target_metadata` is valid metadata for the resulting trait object.
-unsafe impl StableUnsize<dyn Super> for dyn Sub {
-    unsafe fn target_metadata(
-        self: *const Self,
-    ) -> <dyn Super as core::ptr::Pointee>::Metadata {
-        // construction of the relevant metadata here
     }
 }
 ```
@@ -143,25 +131,25 @@ An example impl for the `Arc<T>` type would be the following:
 ```rs
 impl<T, U> CoerceUnsized<Arc<U>> for Arc<T>
 where
-    T: ?Sized + StableUnsize<U>,
+    T: ?Sized + FromMetadataUnsize<U>,
     U: ?Sized
 {
     fn coerce_unsized(self) -> Arc<U> {
         let ptr = Arc::into_raw(self);
         // SAFETY: The arc is safe to be constructed from the result as the metadata belongs to the original
-        // pointer according to StableUnsize requirements
+        // pointer according to FromMetadataUnsize requirements
         unsafe {
             Arc::from_raw(ptr::from_raw_parts(
                 ptr.cast(),
-                // SAFETY: ptr is derived from a live Arc and is therefor a valid raw pointer
-                Unsize::target_metadata(ptr),
+                // SAFETY: ptr is derived from a live Arc and is therefor valid
+                <T as FromMetadataUnsize<U>>::target_metadata(ptr::metadata(ptr)),
             ))
         }
     }
 }
 ```
 
-Here we actually are required to bound this implementation with `StableUnsize` (or `FromMetadataUnsize`), as the target address may not change.
+Here we actually are required to bound this implementation with `FromMetadataUnsize`, as the target address may not change.
 The reason for that is that the `Arc` owns the allocation but also because it puts the ref counts at a certain offset inside of the allocation, so a changing address would make it impossible to correctly touch up on those anymore.
 
 These new definitions allow some more implementations of `CoerceUnsized` which were not previously possible, an example would be the following:
@@ -217,42 +205,16 @@ where
 This trait forms the top of the hierarchy of the 3 unsizing traits.
 Implementors of this trait can freely extract the metadata and address from the object that is being unsized.
 
-
-### `StableUnsize`
-
-A second unsizing trait called `StableUnsize` is introduced for unsizing relationships that keep the address of the object the same.
-
-```rs
-/// Same as [`Unsize`] but the target data address may not change.
-///
-/// # Safety
-///
-/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
-/// the object pointed to by the `self` parameter
-/// - The `Self` type and [`Target`] type must be layout compatible.
-pub unsafe trait StableUnsize<Target>: Unsize<Target>
-where
-    Target: ?Sized,
-{
-    /// # Safety
-    ///
-    /// `self` must be a valid pointer to an instance of `Self`
-    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata;
-}
-```
-
-This trait is more restrictive than `Unsize` by requiring the target address to not change.
-
-
 ### `FromMetadataUnsize`
 
 ```rs
 /// # Safety
 ///
-/// - The implementation of [`StableUnsize::target_metadata`] must return metadata that is valid for
-/// the object pointed to by the `self` parameter
+/// - The implementation of [`FromMetadataUnsize::target_metadata`] must return metadata that is valid for
+/// the object pointed to by the `self` parameter.
+///     - TODO(describe better): valid here means, it must span then entire allocation
 /// - The implementing type and [`Target`] must be layout compatible.
-pub unsafe trait FromMetadataUnsize<Target>: StableUnsize<Target>
+pub unsafe trait FromMetadataUnsize<Target>: Unsize<Target>
 where
     Target: ?Sized,
 {
@@ -280,41 +242,21 @@ In order to prevent misuse of the trait as means of implicit conversions, implem
 For an implementation to be valid, one of the following must hold:
 - Both `Self` and `Target` are references or raw pointers to differing generic parameters where the parameter `T` of `Self` has `T: UnsizeTrait<U>` bound with `U` being the generic parameter of `Target` and `UnsizeTrait` being one of the 3 unsize traits.
 - `Self` and `Target` must have the same type constructor, and only vary in a single type parameter. The type parameter of `Self` must then have a `CoerceUnsized<U>` bound where `U` is the differing type parameter of `Target`. Example: `impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T>`
-- `Self` and `Target` must have the same type constructor, and only vary in a single type parameter. The type parameter of `Self` must then have a `UnsizeTrait<U>` bound where `U` is the differing type parameter of `Target` and `UnsizeTrait` is one of the three unsize traits. Example: `impl<T: ?Sized + StableUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> `
+- `Self` and `Target` must have the same type constructor, and only vary in a single type parameter. The type parameter of `Self` must then have a `UnsizeTrait<U>` bound where `U` is the differing type parameter of `Target` and `UnsizeTrait` is one of the three unsize traits. Example: `impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> `
 
 ## Implementations provided by the standard library
 
-For ergonomic purposes, the `core` library will provide the following blanket implementations:
-
-`StableUnsize<T>` implies `Unsize<T>`.
-```rs
-// SAFETY: The metadata returned by `target_metadata` is valid metadata for the resulting trait object as per `StableUnsize::target_metadata` implementation
-// and the implementing type and [`Target`] are layout compatible as per `Unsize::target_data_address` requirement.
-unsafe impl<T, Target> Unsize<Target> for T
-where
-    Target: ?Sized,
-    T: StableUnsize<Target> + ?Sized,
-{
-    unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
-        // SAFETY: self is a valid raw pointer given the caller contract
-        unsafe { <Self as StableUnsize<Target>>::target_metadata(self) }
-    }
-
-    unsafe fn target_data_address(self: *const Self) -> *const () {
-        self.cast()
-    }
-}
-```
+For ergonomic purposes, the `core` library will provide the following blanket implementation:
 
 This blanket impl removes the need of having to implement both traits and also protects from differing implementations.
 
-`FromMetadataUnsize<T>` implies `StableUnsize<T>`.
+`FromMetadataUnsize<T>` implies `Unsize<T>`.
 ```rs
 // SAFETY:
-// - The implementation of [`StableUnsize::target_metadata`] returns metadata that is valid for
+// - The implementation of [`FromMetadataUnsize::target_metadata`] returns metadata that is valid for
 // all objects of type `Target` as per `FromMetadataUnsize`
 // - The implementing type and [`Target`] are layout compatible as per `FromMetadataUnsize`.
-unsafe impl<T, Target> StableUnsize<Target> for T
+unsafe impl<T, Target> Unsize<Target> for T
 where
     Target: ?Sized,
     T: FromMetadataUnsize<Target> + ?Sized,
@@ -322,8 +264,11 @@ where
     unsafe fn target_metadata(self: *const Self) -> <Target as Pointee>::Metadata {
         <Self as FromMetadataUnsize<Target>>::target_metadata(core::ptr::metadata(self))
     }
-}
 
+    unsafe fn target_data_address(self: *const Self) -> *const () {
+        self.cast()
+    }
+}
 ```
 
 Likewise, this blanket impl removes the need of having to implement all three traits and protects from differing implementations.
@@ -372,7 +317,7 @@ unsafe impl Unsize<str> for String {
 All current implementations provided by the standard library suite for today's `CoerceUnsized` trait except for the listed following ones will be reimplemented with the new definition of the trait while bounded by the new `Unsize` trait, making them more permissive.
 
 The implementations for `*const T`, `*mut T` and `NonNull<T>` will be bounded by `FromMetadataUnsize`, as their data pointer cannot be read from safely.
-The implementation for `Box<T>`, `Rc<T>`, `Arc<T>`, `rc::Weak<T>` and `sync::Weak<T>` will be bounded by `StableUnsize`, as the pointer is effectively owned and cannot change.
+The implementation for `Box<T>`, `Rc<T>`, `Arc<T>`, `rc::Weak<T>` and `sync::Weak<T>` will be bounded by `FromMetadataUnsize`, as the pointer is effectively owned and cannot change.
 The implementation for `Pin<T>` will be elaborated on in the later parts of this RFC.
 
 ## Implementations provided by the compiler
@@ -400,7 +345,7 @@ where
     }
 }
 ```
-As trait upcasting is supported for raw pointers and it potentially requires vtable lookups, `FromMetadataUnsize` is required opposed to `Unsize` or `StableUnsize`, as we need to make sure not to dereference the actual data pointer part.
+As trait upcasting is supported for raw pointers and it potentially requires vtable lookups, `FromMetadataUnsize` is required opposed to `Unsize`, as we need to make sure not to dereference the actual data pointer part.
 
 To keep backwards compatibility (as these are already observable in today's stable rust), the compiler also generates `FromMetadataUnsize<Foo<..., U, ...>>` implementations for structs `Foo<..., T, ...>` if all of these conditions are met:
 - `T: FromMetadataUnsize<U>`.
@@ -515,7 +460,7 @@ Unsizing coercions are now able to run arbitrary user code, placing it into a si
 
 - The design proposed here is (almost) maximally flexible, allowing most use cases to be covered at the expense of multiple unsizing traits by giving full control of how the unsizing happens. The `Unsize` trait hierarchy allows for bounding on certain requirements allowing safe implementations of `CoerceUnsized` with the new flexibilities in place.
 
-- While `StableUnsize` is required for `Box` to be unsize coercible and `FromMetadataUnsize` is required for trait upcasting due to raw pointers allowing it, the general `Unsize` trait might not necessarily be needed, if use cases like `Vec<T>: Unsize<[T]>` are deemed unnecessary. This would simplify the proposal significantly.
+- While `FromMetadataUnsize` is required for `Box` to be unsize coercible and for trait upcasting due to raw pointers allowing it, the general `Unsize` trait might not necessarily be needed, if use cases like `Vec<T>: Unsize<[T]>` are deemed unnecessary. This would simplify the proposal significantly.
 
 - Alternatively, the design could be limited to the proposed `FromMetadataUnsize`, which is effectively today's `Unsize` trait with the addition of the `target_metadata` function. Doing so would still allow users to implement the trait and specifying how to derive the metadata from the source metadata opposed to having the compiler hardcode certain implementations of the trait. Introducing the other traits would then still be an option for the future, as they can be added as a supertrait of this trait with a corresponding blanket impl to prevent breakage.
 

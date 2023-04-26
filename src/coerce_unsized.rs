@@ -9,7 +9,7 @@ use core::ptr;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
-use crate::unsize::{FromMetadataUnsize, StableUnsize, Unsize};
+use crate::unsize::{FromMetadataUnsize, Unsize};
 use crate::TypedMetadata;
 /// Trait that indicates that this is a pointer or a wrapper for one,
 /// where unsizing can be performed on the pointee.
@@ -183,17 +183,19 @@ impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized> CoerceUnsized<*const U> for *
  */
 
 // Box<T> -> Box<U>
-// Note the use of StableUnsize! unstable unsize would be unsound as the box is owning!
-impl<T: ?Sized + StableUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>> for Box<T, A> {
+// Note the use of FromMetadataUnsize! unstable unsize would be unsound as the box is owning!
+impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>>
+    for Box<T, A>
+{
     fn coerce_unsized(self) -> Box<U, A> {
         let (this, a) = Box::into_raw_with_allocator(self);
-        // SAFETY: According to [`StableUnsize`] the metadata is associated with our pointer
+        // SAFETY: According to [`FromMetadataUnsize`] the metadata is associated with our pointer
         unsafe {
             Box::from_raw_in(
                 ptr::from_raw_parts_mut(
                     this.cast(),
                     // SAFETY: this is derived from the box which is currently live
-                    Unsize::target_metadata(this),
+                    <T as FromMetadataUnsize<U>>::target_metadata(ptr::metadata(this)),
                 ),
                 a,
             )
@@ -256,16 +258,17 @@ impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T> {
     }
 }
 
-// Note the use of StableUnsize! unstable unsize would be unsound as arc relies on the data pointer pointing inside of the ArcInner.
-impl<T: ?Sized + StableUnsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
+// Note the use of FromMetadataUnsize! unstable unsize would be unsound as arc relies on the data pointer pointing inside of the ArcInner.
+impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized> CoerceUnsized<Arc<U>> for Arc<T> {
     fn coerce_unsized(self) -> Arc<U> {
         let ptr = Arc::into_raw(self);
+
         // SAFETY: The arc is safe to be constructed as the pointer is unchanged
         unsafe {
             Arc::from_raw(ptr::from_raw_parts(
                 ptr.cast(),
                 // SAFETY: ptr is derived from a live Arc and is therefor valid
-                Unsize::target_metadata(ptr),
+                <T as FromMetadataUnsize<U>>::target_metadata(ptr::metadata(ptr)),
             ))
         }
     }

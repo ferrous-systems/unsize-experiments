@@ -56,6 +56,67 @@ fn fixed_str() {
 }
 
 #[test]
+fn sentinel() {
+    #[derive(Copy, Clone)]
+    #[repr(transparent)]
+    struct CStr(*const u8);
+
+    #[repr(transparent)]
+    struct CStrFat(*const [u8]);
+
+    impl CoerceUnsized<CStrFat> for CStr {
+        fn coerce_unsized(self) -> CStrFat {
+            unsafe {
+                let len = core::iter::successors(Some(self.0), |&prev| {
+                    if prev.is_null() || (*prev) == 0 {
+                        None
+                    } else {
+                        Some(prev.add(1))
+                    }
+                })
+                .count()
+                    - 1;
+                CStrFat(core::ptr::slice_from_raw_parts(self.0, len))
+            }
+        }
+    }
+    let concrete = CStr(b"foo\0".as_ptr());
+    let coerced: CStrFat = concrete.coerce_unsized();
+    assert_eq!(core::ptr::metadata(coerced.0), 3);
+    assert_eq!(coerced.0.addr(), concrete.0.addr());
+}
+
+#[test]
+fn array_vec() {
+    #[repr(C)]
+    pub struct ArrayVec<T, const CAP: usize> {
+        // the `len` first elements of the array are initialized
+        xs: [core::mem::MaybeUninit<T>; CAP],
+        len: usize,
+    }
+    unsafe impl<T, const CAP: usize> Unsize<[T]> for ArrayVec<T, CAP> {
+        unsafe fn target_metadata(self: *const Self) -> <[T] as core::ptr::Pointee>::Metadata {
+            unsafe { (*self).len }
+        }
+
+        unsafe fn target_data_address(self: *const Self) -> *const () {
+            self.cast()
+        }
+    }
+
+    let concrete = ArrayVec {
+        xs: [
+            core::mem::MaybeUninit::new(0i32),
+            core::mem::MaybeUninit::uninit(),
+            core::mem::MaybeUninit::uninit(),
+        ],
+        len: 1,
+    };
+    let coerced: &[i32] = (&concrete).coerce_unsized();
+    assert_eq!(coerced, &[0]);
+}
+
+#[test]
 fn fixed_str_dyn_len() {
     struct FixedStringWithLen<const N: usize>(usize, [u8; N]);
 
