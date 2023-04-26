@@ -37,17 +37,21 @@ Unsizing relationships between two types can be defined by implementing one of t
 These implementations describe how the unsizing has to be performed by specifying what the resulting metadata value of the unsized type is, as well as optionally specifying the address to the unsized object.
 Depending on the need of the unsizing relationship, either of three traits can be used with `FromMetadataUnsize` implying `StableUnsize` and `StableUnsize` implying `Unsize`.
 
-### FromMetadataUnsize
+### Unsize
 
-`FromMetadataUnsize` is used, if the metadata solely comes from the metadata of the to be unsized object (or from compile time information) and does not need to be extracted from the data of object being unsized.
-
-An example for this type of unsizing is `[T; N]` to `[T]` unsizing, as the length metadata is encoded in the array's type:
+`Unsize` is used, if the metadata comes from the object that is being unsized while also requiring to change the address of the object.
+An example for this type of unsizing is `Vec<T>` to `[T]` unsizing, which redirects the pointer to the contained allocation within:
 
 ```rs
-// SAFETY: `Unsize::target_metadata` returns the same value as `FromMetadataUnsize::TARGET_METADATA`
-unsafe impl<T, const N: usize> FromMetadataUnsize<[T]> for [T; N] {
-    fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
-        N
+// SAFETY: The metadata returned by `target_metadata` belongs to the slice pointed to by the pointer returned by `target_address`.
+unsafe impl<T> Unsize<[T]> for Vec<T> {
+    unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
+        // SAFETY: self is a valid pointer per calling contract
+        unsafe { (*self).len }
+    }
+    unsafe fn target_data_address(self: *const Self) -> *const () {
+        // SAFETY: self is a valid pointer per calling contract
+        unsafe { (*self).buf.ptr.as_ptr().cast() }
     }
 }
 ```
@@ -69,21 +73,17 @@ unsafe impl StableUnsize<dyn Super> for dyn Sub {
 }
 ```
 
-### Unsize
+### FromMetadataUnsize
 
-`Unsize` is used, if the metadata comes from the object that is being unsized while also requiring to change the address of the object.
-An example for this type of unsizing is `Vec<T>` to `[T]` unsizing, which redirects the pointer to the contained allocation within:
+`FromMetadataUnsize` is used, if the metadata solely comes from the metadata of the to be unsized object (or from compile time information) and does not need to be extracted from the data of object being unsized.
+
+An example for this type of unsizing is `[T; N]` to `[T]` unsizing, as the length metadata is encoded in the array's type:
 
 ```rs
-// SAFETY: The metadata returned by `target_metadata` belongs to the slice pointed to by the pointer returned by `target_address`.
-unsafe impl<T> Unsize<[T]> for Vec<T> {
-    unsafe fn target_metadata(self: *const Self) -> <[T] as Pointee>::Metadata {
-        // SAFETY: self is a valid pointer per calling contract
-        unsafe { (*self).len }
-    }
-    unsafe fn target_data_address(self: *const Self) -> *const () {
-        // SAFETY: self is a valid pointer per calling contract
-        unsafe { (*self).buf.ptr.as_ptr().cast() }
+// SAFETY: `Unsize::target_metadata` returns the same value as `FromMetadataUnsize::TARGET_METADATA`
+unsafe impl<T, const N: usize> FromMetadataUnsize<[T]> for [T; N] {
+    fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
+        N
     }
 }
 ```
@@ -273,7 +273,7 @@ pub trait CoerceUnsized<Target> {
 }
 ```
 
-Implementations of this trait now specifiy how the coercion is done.
+Implementations of this trait now specify how the coercion is done.
 This also drops the `?Sized` bound on `Target`, as returning unsized values is not possible.
 
 In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce.
