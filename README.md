@@ -242,12 +242,12 @@ This also drops the `?Sized` bound on `Target`, as returning unsized values is n
 
 In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce.
 For an implementation to be valid, one of the following must hold:
-- `Self` and `Target`
+1. `Self` and `Target`
     - references or raw pointers to different generic parameters
     - parameter `T` of `Self` has `T: UnsizeTrait<U>` bound
     - parameter `U` of `Target`
     - `UnsizeTrait` one of the two unsize traits
-- `Self` and `Target`
+2. `Self` and `Target`
     - must have nearly same type constructor, varying in a single type parameter
     - type parameter of `Self` must have a `CoerceUnsized<U>` bound
     - where `U` is the differing type parameter of `Target`
@@ -256,7 +256,7 @@ For an implementation to be valid, one of the following must hold:
         impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>>
             for Cell<T>
         ```
-- `Self` and `Target`
+3. `Self` and `Target`
     - must have nearly same type constructor, varying in a single type parameter
     - type parameter of `Self` must have a `UnsizeTrait<U>` bound
     - where `U` is the differing type parameter of `Target`
