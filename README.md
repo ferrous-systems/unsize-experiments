@@ -240,27 +240,22 @@ pub trait CoerceUnsized<Target> {
 Implementations of this trait now specify how the coercion is done.
 This also drops the `?Sized` bound on `Target`, as returning unsized values is not possible.
 
-In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce.
+In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce. This can be relaxed without breakage in the future.
 For an implementation to be valid, one of the following must hold:
 1. `Self` and `Target`
-    - references or raw pointers to different generic parameters
-    - parameter `T` of `Self` has `T: UnsizeTrait<U>` bound
-    - parameter `U` of `Target`
-    - `UnsizeTrait` one of the two unsize traits
+    - must be references or raw pointers to different generic parameters
+    - type parameter `T` of `Self` has `T: UnsizeTrait<U>` bound where `U` is the type parameter of `Target` and `UnsizeTrait` one of the two unsize traits
 2. `Self` and `Target`
-    - must have nearly same type constructor, varying in a single type parameter
-    - type parameter of `Self` must have a `CoerceUnsized<U>` bound
-    - where `U` is the differing type parameter of `Target`
+    - must have the same type constructor, varying in a single type parameter
+    - type parameter `T` of `Self` must have a `T: CoerceUnsized<U>` bound where `U` is the type parameter of `Target`
     - Example:
         ```rust
         impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>>
             for Cell<T>
         ```
 3. `Self` and `Target`
-    - must have nearly same type constructor, varying in a single type parameter
-    - type parameter of `Self` must have a `UnsizeTrait<U>` bound
-    - where `U` is the differing type parameter of `Target`
-    - `UnsizeTrait` is one of the two unsize traits
+    - must have the same type constructor, varying in a single type parameter
+    - type parameter `T` of `Self` must have a `T: UnsizeTrait<U>` bound where `U` is the differing type parameter of `Target` and  `UnsizeTrait` is one of the two unsize traits
     - Example:
         ```rust
         impl<T: ?Sized + FromMetadataUnsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Box<U, A>>
@@ -337,19 +332,32 @@ unsafe impl Unsize<str> for String {
 }
 ```
 
-All current implementations provided by the standard library suite for today's `CoerceUnsized` trait except for the listed following ones will be reimplemented with the new definition of the trait while bounded by the new `Unsize` trait, making them more permissive.
 
-| Type            | New Bounded By         | Reason                                         |
-|:----------------|:-----------------------|:-----------------------------------------------|
-| `*const T`      | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
-| `*mut T`        | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
-| `NonNull<T>`    | `FromMetadataUnsize`   | data pointer cannot be read from safely        |
-| `Box<T>`        | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
-| `Rc<T>`         | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
-| `Arc<T>`        | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
-| `rc::Weak<T>`   | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
-| `sync::Weak<T>` | `FromMetadataUnsize`   | pointer is effectively owned and cannot change |
-| `Pin<T>`        | To be elaborated later | TBD                                            |
+The implementations of `CoerceUnsized` provided by the standard library will be changed as follows:
+ - `&T: CoerceUnsized<&U>`: kept the same
+ - `&T: CoerceUnsized<*const U>`: kept the same
+ - `&mut T: CoerceUnsized<&U>`: kept the same
+ - `&mut T: CoerceUnsized<*const U>`: kept the same
+ - `&mut T: CoerceUnsized<&mut U>`: kept the same
+ - `&mut T: CoerceUnsized<*mut U>`: kept the same
+ - `*const T: CoerceUnsized<*const U>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `*mut T: CoerceUnsized<*mut U>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `*mut T: CoerceUnsized<*const U>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `NonNull<T>: CoerceUnsized<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `Pin<T>: CoerceUnsized<Pin<U>>`: as this impl is currently unsound, see the #Pin_Unsoundness section below
+ - `UnsafeCell<T>: CoerceUnsized<UnsafeCell<U>>`: kept the same
+ - `SyncUnsafeCell<T>: CoerceUnsized<SyncUnsafeCell<U>>`: kept the same
+ - `Cell<T>: CoerceUnsized<Cell<U>>`: kept the same
+ - `RefCell<T>: CoerceUnsized<RefCell<U>>`: kept the same
+ - `Ref<T>: CoerceUnsized<Ref<U>>`: kept the same
+ - `RefMut<T>: CoerceUnsized<RefMut<U>>`: kept the same
+ - `Rc<T>: CoerceUnsized<Rc<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `rc::Weak<T>: CoerceUnsized<rc::Weak<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `Arc<T>: CoerceUnsized<Arc<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `sync::Weak<T>: CoerceUnsized<sync::Weak<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+ - `Box<T>: CoerceUnsized<Box<U>>`: bound `T: Unsize<U> + ?Sized,` will be replaced by `T: FromMetadataUnsize<U> + ?Sized,`
+
+where the implementation of the `coerce_unsized` function is written such that it results in the same semantics as the current compiler conversion.
 
 ## Implementations provided by the compiler
 
