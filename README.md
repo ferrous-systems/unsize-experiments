@@ -362,7 +362,7 @@ The design proposed here would still enable this, although it raises some questi
 - For one, reborrows should be guaranteed to be no-ops, as all that should change in "reborrow coercions" are the corresponding lifetimes, yet this RFC exposes a function that will be run on coercion.
 - Generalizing this to a general `Coerce` trait would require specialization and/or negative trait bound reasoning, such that `&'a mut T: CoerceUnsized<&'b T>` (for reborrows) but also `&'a mut T: CoerceUnsized<&'b U>, T: Unsize<U>` for unsizing coercions can both be done as impls.
 
-The first issue is only of concern with the proposed design, while the second one is a more general issue relevant to impl overlap.
+The first issue is only of concern with the proposed design here, while the second one is a more general issue relevant to impl overlap.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -390,7 +390,6 @@ And while the RFC makes the traits more flexible, it does not offer the same fle
 
 - Given the pin unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be safe?
 - The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations. Is this problematic? Should they be overridable?
-- How does this RFC interact with `DispatchFromDyn`, does the trait need adjustments? Does this new design prevent `DispatchFromDyn` from evolving in certain ways?
 - Will this design prevent any scenarios from being ever supported?
 - As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
 
