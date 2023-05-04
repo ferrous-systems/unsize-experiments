@@ -252,7 +252,7 @@ unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
 }
 ```
 
-### `CoercedUnsized`
+### `CoerceUnsized`
 
 The non-delegating implementations of `CoerceUnsized` provided by the standard library will have the implementation of their `fn coerce_unsized` function written to disassemble the source into pointer and source metadata, make use of the `Unsize` trait for extracting the target metadata from the source metadata, and then reassembling the pointer and target metadata into the target.
 
