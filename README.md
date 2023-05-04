@@ -82,10 +82,10 @@ To actually enable the unsizing coercion of objects, the `CoerceUnsized` trait h
 It defines how the unsizing of the inner type occurs for a given pointer or wrapper type.
 
 A `CoerceUnsized` implementation has specific requirements to be valid which boil down to 2 kinds:
-- A non-delegating `CoerceUnsized` impl
-- A delegating `CoerceUnsized` impl
+1. A non-delegating `CoerceUnsized` impl
+2. A delegating `CoerceUnsized` impl
 
-### A non-delegating `CoerceUnsized` impl
+### 1. A non-delegating `CoerceUnsized` impl
 
 Such an impl is used for actual pointer like types, such as `&'a T` or `Arc<T>`.
 The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only. Say, the parameters are `T` and `U`. Then,
@@ -133,14 +133,13 @@ where
 }
 ```
 
-Important to note is that `Unsize` impls are required to return metadata that make the unsized object report the same size as the source type.
-If that was not the case, the `Arc` impl above would be unsound, as its destructor would try to deallocate a smaller allocation than it initially owned.
+⚠️ **Important** to note is that `Unsize` impls are required to return metadata that make the unsized object report the same size as the source type. If that was not the case, the `Arc` impl above would be unsound, as its destructor would try to deallocate a smaller allocation than it initially owned.
 
-### A delegating `CoerceUnsized` impl
+### 2. A delegating `CoerceUnsized` impl
 
 Such an impl is used for wrapper like types, such as `Cell<T>` or `Pin<T>` where the impl is required to list a `CoerceUnsized` bound on the generic parameters of the wrapping type.
 
-An example impl for the `Cell<T>` type would be the following:
+#### Example impl for the `Cell<T>` type
 ```rust
 impl<T, U> CoerceUnsized<Cell<U>> for Cell<T>
 where
@@ -152,7 +151,8 @@ where
 }
 ```
 
-A delegating impl is not limited to struct types, as such another example implementation for `Option<T>` would be:
+#### Example implementation for `Option<T>`
+A delegating impl is not limited to `struct` types.
 ```rust
 impl<T, U> CoerceUnsized<Option<U>> for Option<T>
 where
