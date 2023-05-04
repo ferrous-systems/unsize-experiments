@@ -17,14 +17,15 @@ What follows here is the accompanied pre-RFC:
 # Summary
 [summary]: #summary
 
-Move the unsizing logic out of the compiler into library source, allowing for a more flexible design of the features.
+Move the unsizing logic out of the compiler into library source, allowing for a more flexible design of the features and allowing user code to implement `Unsize` for their own types.
 
 # Motivation
 [motivation]: #motivation
 
-Currently unsizing in Rust is very rigid, only allowed in very specific scenarios permitted by the rules surrounding the current `Unsize` and `CoerceUnsized` traits and it's automatic implementations by the compiler.
+Currently unsizing in Rust is very rigid, only allowed in very specific scenarios permitted by the rules surrounding the current `Unsize` and `CoerceUnsized` traits and its automatic implementations by the compiler.
 
-This on one hand, has the downside of being very magical, as the majority of the logic happens inside the compiler opposed to the source code and it also prevents certain unsizing implementations from being doable today
+This has the downside of being very magical, as the majority of the logic happens inside the compiler opposed to the source code.
+It also prevents certain unsizing implementations from being doable today.
 
 This RFC attempts to make these rules more flexible by also allowing user implementations of the traits that define how the metadata is derived and composed back into unsized objects.
 
@@ -38,7 +39,7 @@ These implementations describe how the metadata is derived from a source type an
 
 An example implementation of `Unsize` for `[T; N]` to `[T]` unsizing looks like the following:
 
-```rs
+```rust
 // SAFETY:
 // - `Unsize::target_metadata` returns length metadata that spans the entire array exactly.
 // - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid to be interpreted as a pointer to a slice `[T]`.
@@ -56,9 +57,11 @@ The implementation then just returns the length `N` from the array type, as this
 
 Another example that does an unsized to unsized coercion is the following implementation (for trait upcasting provided by the compiler):
 
-```rs
+```rust
 trait Super {}
+
 trait Sub: Super {}
+
 // SAFETY:
 // - `Unsize::target_metadata` returns a vtable provided by the vtable of the `dyn Sub` object.
 // - `dyn Super` is a super trait of `dyn Sub`, so a pointer pointing to data for a `dyn Sub` is valid to be used as a data pointer to a `dyn Super`
@@ -73,18 +76,21 @@ This is an unsizing impl required for trait upcasting, where the metadata (the v
 
 ## CoerceUnsized
 
-To actually enable the unsizing coercion of objects, the `CoerceUnsized` trait that defines how the unsizing of the inner type occurs for a given pointer or wrapper type has to be implemented.
-An unsizing coercion is then done by the compiler implicitly when required by inserting a call to the `CoerceUnsized::coerce_unsized` function.
+To actually enable the unsizing coercion of objects, the `CoerceUnsized` trait has to be implemented.
+It defines how the unsizing of the inner type occurs for a given pointer or wrapper type.
 
 A `CoerceUnsized` implementation has specific requirements to be valid which boil down to 2 kinds:
+- A non-delegating `CoerceUnsized` impl
+- A delegating `CoerceUnsized` impl
 
 ### A non-delegating `CoerceUnsized` impl
 
 Such an impl is used for actual pointer like types, such as `&'a T` or `Arc<T>`.
-These kinds of impls are required to list a trait bound with the `Unsize` trait on the generic parameters of the pointer types.
+The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only.
+The differing generic parameters are required to then be part of a `T: Unsize<U>` bound where `T` is the relevant generic parameter of the implementing type and `U` the relevant generic parameter of the `CoerceUnsized` target type.
 
 An example impl for the `& 'a T` type would be the following:
-```rs
+```rust
 impl<'a, 'b, T, U> CoerceUnsized<&'a U> for &'b T
 where
     'b: 'a,
@@ -101,7 +107,7 @@ where
 ```
 
 An example impl for the `Arc<T>` type would be the following:
-```rs
+```rust
 impl<T, U> CoerceUnsized<Arc<U>> for Arc<T>
 where
     T: ?Sized + Unsize<U>,
@@ -123,8 +129,9 @@ If that was not the case, the `Arc` impl above would be unsound, as its destruct
 ### A delegating `CoerceUnsized` impl
 
 Such an impl is used for wrapper like types, such as `Cell<T>` or `Pin<T>` where the impl is required to list a `CoerceUnsized` bound on the generic parameters of the wrapping type.
+
 An example impl for the `Cell<T>` type would be the following:
-```rs
+```rust
 impl<T, U> CoerceUnsized<Cell<U>> for Cell<T>
 where
     T: CoerceUnsized<U>
@@ -136,7 +143,7 @@ where
 ```
 
 A delegating impl is not limited to struct types, as such another example implementation for `Option<T>` would be:
-```rs
+```rust
 impl<T, U> CoerceUnsized<Option<U>> for Option<T>
 where
     T: CoerceUnsized<U>,
@@ -159,7 +166,7 @@ With such an impl, `Option<&[T; N]>` could coerce to `Option<&[T]>`.
 
 The new `Unsize` trait definition looks like the following:
 
-```rs
+```rust
 /// # Safety
 ///
 /// The implementation of [`Unsize::target_metadata`] must return metadata that
@@ -186,9 +193,12 @@ pub trait CoerceUnsized<Target> {
 ```
 
 Implementations of this trait now specify how the coercion is done.
-This also drops the `?Sized` bound on `Target`, as returning unsized values is not possible currently and it being possible to relax the bound later on.
+This also drops the `?Sized` bound on `Target`, as returning unsized values is not possible currently.
+This can be relaxed without breakage in the future.
 
-In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce. This can be relaxed without breakage in the future.
+In order to prevent misuse of the trait as means of implicit conversions, implementations for this trait require specific conditions to hold which the compiler will enforce.
+This can be relaxed without breakage in the future.
+
 For an implementation to be valid, one of the following must hold:
 1. `Self` and `Target`
     - must be references or raw pointers to different generic parameters
@@ -213,11 +223,11 @@ For an implementation to be valid, one of the following must hold:
 ## Implementations provided by the standard library
 
 Today, all `Unsize` implementations are provided by the compiler.
-Most of them will continue to be provided by the compiler as they involve trait objects which depend on all traits defined in a compilation.
+Most of them will continue to be provided by the compiler as they involve trait objects which depend on all traits defined.
 The only one that will no longer be emitted by the compiler is the `[T; N]: Unsize<[T]>` implementation as we can now fully implement it in library source.
 The implementation will be as follows (and live in `core`):
 
-```rs
+```rust
 // SAFETY:
 // - `Unsize::target_metadata` returns length metadata that spans the entire array exactly.
 // - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid to be interpreted as a pointer to a slice `[T]`.
@@ -236,8 +246,8 @@ For the delegating implementations, the implementation of the `fn coerce_unsized
 
 > Note: This section uses fictional rust syntax
 
-The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before :
-```rs
+The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before:
+```rust
 unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
     fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <dyn Trait as Pointee>::Metadata {
         // magic
@@ -246,7 +256,7 @@ unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
 ```
 
 For the unstable trait upcasting feature, the compiler will generate the following `Unsize` implementations:
-```rs
+```rust
 unsafe impl<trait Trait, trait Super> Unsize<dyn Super> for dyn Trait
 where
     dyn Trait: Super
@@ -265,7 +275,7 @@ To keep backwards compatibility (as these are already observable in today's stab
 - `Bar<T>: Unsize<Bar<U>>`, where `Bar<T>` stands for the actual type of that last field.
 - `Foo<U>: Pointee<Metadata = <Bar<U> as Pointee>::Metadata>`
 
-## Builtin unsizes for performance
+## Unsize un-lowering for known impls
 
 The compiler may "un-lower" some known unsize coercions back into builtin operations in the MIR as to not degrade performance too much, as lowering this new definition will introduce a lot of new operations that don't exist in the current unsizing logic.
 This would be similar to how builtin operators for primitives work currently, where they are typechecked with the trait impls but then lowered back to builtin operators in the mir.
@@ -276,7 +286,7 @@ See the following PR for context: https://github.com/rust-lang/rust/pull/97052.
 
 With this new definition, we can implement `CoerceUnsized` for `TypeMetadata` without having to special case it in the compiler as follows:
 
-```rs
+```rust
 struct TypedMetadata<T: ?Sized>(pub <T as core::ptr::Pointee>::Metadata);
 
 
@@ -296,10 +306,13 @@ where
 See the following issue for context: https://github.com/rust-lang/rust/issues/68015
 
 The design of the new traits here do not address the underlying issue in regards to `Pin`.
-The author of this RFC feels like addressing the `Pin` soundness in the definitions of the traits is wrong, as in almost all cases where are a user implements one of these traits `Pin` will be irrelevant to them. And at its core, unsizing is not coupled with `Pin` whatsoever.
+The author of this RFC feels like addressing the `Pin` soundness in the definitions of the traits is wrong, as in almost all cases where are a user implements one of these traits `Pin` will be irrelevant to them.
+And at its core, unsizing is not coupled with `Pin` whatsoever.
+
 It would make much more sense to fix the unsound `CoerceUnsized` implementation that `Pin` provides.
+
 That is given the current implementation of (with the new definition of the trait):
-```rs
+```rust
 
 // Copied from core library docs:
 // Note: this means that any impl of `CoerceUnsized` that allows coercing from
@@ -320,8 +333,8 @@ where
 }
 ```
 
-We should rather strife to have the following 2 implementations:
-```rs
+Instead, we should rather strive to have the following 2 implementations:
+```rust
 // Permit going from Pin<impl Unpin> to Pin<impl Unpin>
 impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
 where
@@ -352,6 +365,8 @@ While this is a breaking change, it should be in line with being a soundness fix
 Unfortunately, these kind of impl requires negative bounds and negative reasoning which is its own can of worms and therefor likely not to happen, see https://github.com/rust-lang/rust/issues/42721.
 Though maybe allowing them for auto traits alone could work out fine, given those types of traits are already rather special.
 
+Assuming this path would be blessed as the future fix for the issue, this RFC itself will not change the status quo of the unsoundness and therefor would not need to be blocked on negative bounds/reasoning.
+
 ## Custom Reborrows
 
 See the following issue for context: https://github.com/rust-lang/rfcs/issues/1403
@@ -367,7 +382,7 @@ The first issue is only of concern with the proposed design here, while the seco
 # Drawbacks
 [drawbacks]: #drawbacks
 
-- This proposal allows for some non-sensical `CoerceUnsized` implementations resulting in odd unsizing coercions, though the restrictions on the `CoerceUnsized` trait try to limit them (for the time being).
+- This proposal allows for some non-sensical `CoerceUnsized` implementations resulting in odd unsizing coercions (think implicit casts where no actual "unsizing" happens), though the restrictions on the `CoerceUnsized` trait try to limit them (for the time being).
 - Unsizing coercions are now able to run arbitrary user code, placing it into a similar category to `Deref` in that regard, effectively adding yet more user facing \*magic\* to the language.
 - The `Unsize` trait now depends on the `Pointee` trait which means any push for stabilization will depend on the stabilization of said trait.
 
@@ -388,7 +403,7 @@ And while the RFC makes the traits more flexible, it does not offer the same fle
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- Given the pin unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be safe?
+- Given the pin unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be sound?
 - The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations. Is this problematic? Should they be overridable?
 - Will this design prevent any scenarios from being ever supported?
 - As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
