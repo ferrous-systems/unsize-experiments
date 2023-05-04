@@ -91,7 +91,7 @@ Such an impl is used for actual pointer like types, such as `&'a T` or `Arc<T>`.
 The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only. Say, the parameters are `T` and `U`. Then,
 
 - `T` is the generic paramter of the implementing type; is bound as `T: Unsize<U>`
-- `U` is the generic paramter of the `CorecedUnsized` target type
+- `U` is the generic parameter of the `CoerceUnsized` target type
 
 #### Example impl for the `& 'a T` type
 
