@@ -42,7 +42,8 @@ An example implementation of `Unsize` for `[T; N]` to `[T]` unsizing looks like 
 ```rust
 // SAFETY:
 // - `Unsize::target_metadata` returns length metadata that spans the entire array exactly.
-// - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid to be interpreted as a pointer to a slice `[T]`.
+// - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid
+//   to be interpreted as a pointer to a slice `[T]`.
 unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
     fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
         N
@@ -55,7 +56,7 @@ The implementation then just returns the length `N` from the array type, as this
 
 <!-- not the best example thats following here, but I could not think of an unsized to unsized relationship thats not trait upcasting, given custom unsized typed are not currently a thing -->
 
-Another example that does an unsized to unsized coercion is the following implementation (for trait upcasting provided by the compiler):
+An example that does an unsized to unsized coercion is the following implementation (for trait upcasting provided by the compiler):
 
 ```rust
 trait Super {}
@@ -64,7 +65,8 @@ trait Sub: Super {}
 
 // SAFETY:
 // - `Unsize::target_metadata` returns a vtable provided by the vtable of the `dyn Sub` object.
-// - `dyn Super` is a super trait of `dyn Sub`, so a pointer pointing to data for a `dyn Sub` is valid to be used as a data pointer to a `dyn Super`
+// - `dyn Super` is a super trait of `dyn Sub`, so a pointer pointing to data for a `dyn Sub`
+//   is valid to be used as a data pointer to a `dyn Super`
 unsafe impl Unsize<dyn Super> for dyn Sub {
     unsafe fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <dyn super as Pointee>::Metadata {
         metadata.upcast()
@@ -86,10 +88,13 @@ A `CoerceUnsized` implementation has specific requirements to be valid which boi
 ### A non-delegating `CoerceUnsized` impl
 
 Such an impl is used for actual pointer like types, such as `&'a T` or `Arc<T>`.
-The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only.
-The differing generic parameters are required to then be part of a `T: Unsize<U>` bound where `T` is the relevant generic parameter of the implementing type and `U` the relevant generic parameter of the `CoerceUnsized` target type.
+The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only. Say, the parameters are `T` and `U`. Then,
 
-An example impl for the `& 'a T` type would be the following:
+- `T` is the generic paramter of the implementing type; is bound as `T: Unsize<U>`
+- `U` is the generic paramter of the `CorecedUnsized` target type
+
+#### Example impl for the `& 'a T` type
+
 ```rust
 impl<'a, 'b, T, U> CoerceUnsized<&'a U> for &'b T
 where
@@ -100,13 +105,15 @@ where
     fn coerce_unsized(self) -> &'a U {
         let metadata = Unsize::target_metadata(core::ptr::metadata(self));
         let untyped_data_ptr = (self as *const T).cast::<()>();
-        // SAFETY: [`Unsize`] demands that the return value of `Unsize::target_metadata` is valid to be used together with the data pointer to be re-interpreted as the unsized type
+        // SAFETY: [`Unsize`] demands that the return value of
+        // `Unsize::target_metadata` is valid to be used together
+        // with the data pointer to be re-interpreted as the unsized type
         unsafe { &*core::ptr::from_raw_parts(untyped_data_ptr, metadata) }
     }
 }
 ```
 
-An example impl for the `Arc<T>` type would be the following:
+#### Example impl for the `Arc<T>` type
 ```rust
 impl<T, U> CoerceUnsized<Arc<U>> for Arc<T>
 where
@@ -117,7 +124,10 @@ where
         let ptr = Arc::into_raw(self);
         let metadata = Unsize::target_metadata(core::ptr::metadata(ptr));
         let untyped_data_ptr = (ptr as *const T).cast::<()>();
-        // SAFETY: [`Unsize`] demands that the return value of `Unsize::target_metadata` is valid to be used together with the data pointer to be re-interpreted as the unsized type and that `std::mem::size_of` on `U` will report the same size as the `T`.
+        // SAFETY: [`Unsize`] demands that the return value of
+        // `Unsize::target_metadata` is valid to be used together
+        // with the data pointer to be re-interpreted as the unsized type
+        // and that `std::mem::size_of` on `U` will report the same size as the `T`.
         unsafe { Arc::from_raw(core::ptr::from_raw_parts(untyped_data_ptr, metadata)) }
     }
 }
