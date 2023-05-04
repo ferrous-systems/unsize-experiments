@@ -91,7 +91,7 @@ Such an impl is used for actual pointer like types, such as `&'a T` or `Arc<T>`.
 The implementing type and the `CoerceUnsized` target type must differ in a single generic parameter only. Say, the parameters are `T` and `U`. Then,
 
 - `T` is the generic parameter of the implementing type; is bound as `T: Unsize<U>`
-- `U` is the generic parameter of the `CoerceUnsized` target type
+- `U` is the generic parameter of the `CorecedUnsized` target type
 
 #### Example impl for the `& 'a T` type
 
@@ -252,7 +252,7 @@ unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
 }
 ```
 
-### `CoerceUnsized`
+### `CoercedUnsized`
 
 The non-delegating implementations of `CoerceUnsized` provided by the standard library will have the implementation of their `fn coerce_unsized` function written to disassemble the source into pointer and source metadata, make use of the `Unsize` trait for extracting the target metadata from the source metadata, and then reassembling the pointer and target metadata into the target.
 
@@ -261,8 +261,6 @@ For the delegating implementations, the implementation of the `fn coerce_unsized
 ## Implementations provided by the compiler
 
 > ⚠️ Note: This section uses fictional rust syntax
-
-The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before:
 
 For types to trait object for their implemented types, the compiler will generate `Unsize` implmentations:
 ```rust
