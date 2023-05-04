@@ -263,6 +263,8 @@ For the delegating implementations, the implementation of the `fn coerce_unsized
 > ⚠️ Note: This section uses fictional rust syntax
 
 The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before:
+
+For types to trait object for their implemented types, the compiler will generate `Unsize` implmentations:
 ```rust
 unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
     fn target_metadata(metadata: <Self as Pointee>::Metadata) -> <dyn Trait as Pointee>::Metadata {
@@ -296,9 +298,9 @@ To keep backwards compatibility (as these are already observable in today's stab
 The compiler may "un-lower" some known unsize coercions back into builtin operations in the MIR as to not degrade performance too much, as lowering this new definition will introduce a lot of new operations that don't exist in the current unsizing logic.
 This would be similar to how builtin operators for primitives work currently, where they are typechecked with the trait impls but then lowered back to builtin operators in the mir.
 
-## TypeMetadata<T> and Unsizing
+## `TypeMetadata<T>` and Unsizing
 
-See the following PR for context: https://github.com/rust-lang/rust/pull/97052.
+See the following PR for context: [Implement pointee metadata unsizing via a `TypedMetadata<T>` container #97052](https://github.com/rust-lang/rust/pull/97052).
 
 With this new definition, we can implement `CoerceUnsized` for `TypeMetadata` without having to special case it in the compiler as follows:
 
@@ -319,7 +321,8 @@ where
 
 ## Pin Unsoundness
 
-See the following issue for context: https://github.com/rust-lang/rust/issues/68015
+See the following issue for context: [`Pin` is unsound due to transitive effects of `CoerceUnsized` #68015
+](https://github.com/rust-lang/rust/issues/68015)
 
 The design of the new traits here do not address the underlying issue in regards to `Pin`.
 The author of this RFC feels like addressing the `Pin` soundness in the definitions of the traits is wrong, as in almost all cases where are a user implements one of these traits `Pin` will be irrelevant to them.
@@ -339,7 +342,8 @@ That is given the current implementation of (with the new definition of the trai
 impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
 where
     P: CoerceUnsized<U>,
-    // U: core::ops::Deref, this bound is accidentally missing upstream, hence we can't use `Pin::new_unchecked` in the implementation
+    // `U: core::ops::Deref`, this bound is accidentally missing upstream,
+    // hence we can't use `Pin::new_unchecked` in the implementation
 {
     fn coerce_unsized(self) -> Pin<U> {
         Pin {
@@ -351,7 +355,7 @@ where
 
 Instead, we should rather strive to have the following 2 implementations:
 ```rust
-// Permit going from Pin<impl Unpin> to Pin<impl Unpin>
+// Permit going from `Pin<impl Unpin>` to` Pin<impl Unpin>`
 impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
 where
     P: CoerceUnsized<U>,
@@ -362,7 +366,8 @@ where
         Pin::new(self.pointer.coerce_unsized())
     }
 }
-// Permit going from Pin<impl Pin> to Pin<impl Pin>
+
+// Permit going from `Pin<impl Pin>` to `Pin<impl Pin>`
 impl<P, U> CoerceUnsized<Pin<U>> for Pin<P>
 where
     P: CoerceUnsized<U>,
@@ -370,7 +375,8 @@ where
     U: core::ops::Deref<Target: !Unpin>,
 {
     fn coerce_unsized(self) -> Pin<U> {
-        // SAFETY: The new unpin Pin is derived from another unpin Pin, so we the pinned contract is kept up
+        // SAFETY: The new unpin Pin is derived from another unpin Pin,
+        // so we the pinned contract is kept up
         unsafe { Pin::new_unchecked(self.pointer.coerce_unsized()) }
     }
 }
@@ -378,14 +384,14 @@ where
 
 
 While this is a breaking change, it should be in line with being a soundness fix.
-Unfortunately, these kind of impl requires negative bounds and negative reasoning which is its own can of worms and therefor likely not to happen, see https://github.com/rust-lang/rust/issues/42721.
+Unfortunately, these kind of impl requires negative bounds and negative reasoning which is its own can of worms and therefore likely not to happen, see [GH issue: Need negative trait bound #42721](https://github.com/rust-lang/rust/issues/42721).
 Though maybe allowing them for auto traits alone could work out fine, given those types of traits are already rather special.
 
-Assuming this path would be blessed as the future fix for the issue, this RFC itself will not change the status quo of the unsoundness and therefor would not need to be blocked on negative bounds/reasoning.
+Assuming this path would be blessed as the future fix for the issue, this RFC itself will not change the status quo of the unsoundness and therefore would not need to be blocked on negative bounds/reasoning.
 
 ## Custom Reborrows
 
-See the following issue for context: https://github.com/rust-lang/rfcs/issues/1403
+See the following issue for context: [Some way to simulate `&mut` reborrows in user code #1403](https://github.com/rust-lang/rfcs/issues/1403)
 
 In the linked issue the idea was to generalize `CoerceUnsized` as a general `Coerce` trait.
 
@@ -412,7 +418,7 @@ The first issue is only of concern with the proposed design here, while the seco
 # Prior art
 [prior-art]: #prior-art
 
-There is another Pre-RFC that tries to improve Unsizing which can be found [here](https://internals.rust-lang.org/t/pre-rfc-improved-unsizing/16861).
+There is [another Pre-RFC that tries to improve Unsizing](https://internals.rust-lang.org/t/pre-rfc-improved-unsizing/16861).
 It does so by just allowing more impls of the current traits, while restricting them by taking visibilities of fields into account which complicates the traits in a (subjectively to the author) confusing way.
 And while the RFC makes the traits more flexible, it does not offer the same flexibility that this proposal offers.
 
@@ -420,10 +426,12 @@ And while the RFC makes the traits more flexible, it does not offer the same fle
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- Given the pin unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be sound?
-- The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations. Is this problematic? Should they be overridable?
-- Will this design prevent any scenarios from being ever supported?
-- As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
+1. Given the `Pin` unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be sound?
+2. The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations. 
+    1. Is this problematic?
+    2. Should they be overridable?
+3. Will this design prevent any scenarios from being ever supported?
+4. As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
