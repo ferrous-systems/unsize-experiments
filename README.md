@@ -383,6 +383,7 @@ The first issue is only of concern with the proposed design here, while the seco
 [drawbacks]: #drawbacks
 
 - This proposal allows for some non-sensical `CoerceUnsized` implementations resulting in odd unsizing coercions (think implicit casts where no actual "unsizing" happens), though the restrictions on the `CoerceUnsized` trait try to limit them (for the time being).
+  - This includes implementations that may allocate
 - Unsizing coercions are now able to run arbitrary user code, placing it into a similar category to `Deref` in that regard, effectively adding yet more user facing \*magic\* to the language.
 - The `Unsize` trait now depends on the `Pointee` trait which means any push for stabilization will depend on the stabilization of said trait.
 
