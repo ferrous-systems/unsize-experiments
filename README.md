@@ -181,7 +181,8 @@ The new `Unsize` trait definition looks like the following:
 ///
 /// The implementation of [`Unsize::target_metadata`] must return metadata that
 /// - is valid for interpreting the `Self` type to `Target`, and
-/// - where using `core::mem::size_of` on the unsized object will report the same size as on the source object.
+/// - where using `core::mem::size_of` on the unsized object will report the
+///   same size as on the source object.
 pub unsafe trait Unsize<Target>
 where
     Target: ?Sized,
@@ -232,6 +233,8 @@ For an implementation to be valid, one of the following must hold:
 
 ## Implementations provided by the standard library
 
+### `Unsize`
+
 Today, all `Unsize` implementations are provided by the compiler.
 Most of them will continue to be provided by the compiler as they involve trait objects which depend on all traits defined.
 The only one that will no longer be emitted by the compiler is the `[T; N]: Unsize<[T]>` implementation as we can now fully implement it in library source.
@@ -240,7 +243,8 @@ The implementation will be as follows (and live in `core`):
 ```rust
 // SAFETY:
 // - `Unsize::target_metadata` returns length metadata that spans the entire array exactly.
-// - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid to be interpreted as a pointer to a slice `[T]`.
+// - `[T; N]` is a contiguous slice of `T`'s, so a pointer pointing to its data is valid to
+//   be interpreted as a pointer to a slice `[T]`.
 unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
     fn target_metadata((): <Self as Pointee>::Metadata) -> <[T] as Pointee>::Metadata {
         N
@@ -248,13 +252,15 @@ unsafe impl<T, const N: usize> Unsize<[T]> for [T; N] {
 }
 ```
 
+### `CoercedUnsized`
+
 The non-delegating implementations of `CoerceUnsized` provided by the standard library will have the implementation of their `fn coerce_unsized` function written to disassemble the source into pointer and source metadata, make use of the `Unsize` trait for extracting the target metadata from the source metadata, and then reassembling the pointer and target metadata into the target.
 
 For the delegating implementations, the implementation of the `fn coerce_unsized` function will merely delegate to the inner value and then wrap that result again.
 
 ## Implementations provided by the compiler
 
-> Note: This section uses fictional rust syntax
+> ⚠️ Note: This section uses fictional rust syntax
 
 The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before:
 ```rust
