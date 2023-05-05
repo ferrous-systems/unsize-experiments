@@ -262,8 +262,6 @@ For the delegating implementations, the implementation of the `fn coerce_unsized
 
 > ⚠️ Note: This section uses fictional rust syntax
 
-The compiler will generate `Unsize` implementations for types to trait object for their implemented types as before:
-
 For types to trait object for their implemented types, the compiler will generate `Unsize` implmentations:
 ```rust
 unsafe impl<trait Trait, T: Trait> Unsize<dyn Trait> for T {
@@ -427,7 +425,7 @@ And while the RFC makes the traits more flexible, it does not offer the same fle
 [unresolved-questions]: #unresolved-questions
 
 1. Given the `Pin` unsoundness proposal, assuming negative reason was a thing, would an impl permitting to go from `Pin<impl Unpin>` to `Pin<impl !Unpin>` be sound?
-2. The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations. 
+2. The compiler emitted implementations for the unsize trait, in particular the `Foo<..., T, ...>` case may collide with user implementations.
     1. Is this problematic?
     2. Should they be overridable?
 3. Will this design prevent any scenarios from being ever supported?

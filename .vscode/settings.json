@@ -4,5 +4,38 @@
     ],
     "rust-analyzer.inlayHints.expressionAdjustmentHints.enable": "always",
     "rust-analyzer.check.command": "clippy",
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    // "rust-analyzer.server.path": "rust-analyzer",
+    "rust-analyzer.server.extraEnv": {
+        "RA_LOG": "warn,mbe::expander=error,flycheck=info,rust_analyzer=info,project_model=info",
+        // "RUST_BACKTRACE": "FULL",
+        // "RA_LOG": "warn,mbe::expander=error,flycheck=info,project_model=info,base_db=info,rust_analyzer::reload=info",
+        // "RA_PROFILE": "handle_completion>100",
+        "RA_PROFILE": "handle_completion>100",
+        // "RA_PROFILE": "cargo_to_crate_graph>20",
+        // "RA_COUNT": "1"
+    },
+    "cSpell.words": [
+        "alloc",
+        "autoderef",
+        "deallocate",
+        "dereferencable",
+        "impls",
+        "overridable",
+        "Pointee",
+        "reborrow",
+        "Reborrows",
+        "sensical",
+        "struct",
+        "structs",
+        "supertrait",
+        "typechecked",
+        "unsizable",
+        "unsize",
+        "Unsized",
+        "Unsizing",
+        "upcasting",
+        "usize",
+        "vtable"
+    ]
 }
