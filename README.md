@@ -2,9 +2,6 @@
 
 This repo experiments with a new design for the `Unsize` and `CoerceUnsized` traits, making them more flexible and applicable to more types.
 The motivation is to see how flexible the traits could be made and whether this flexibility pays off or not.
-An idea that kicked this off was to have `Vec<T>: Unsize<[T]>`, which requires user code to run to be able to adjust the pointer for the data.
-Today `Vec<T>` implements `Deref<Target = [T]>` for convenience as this allows dispatching slice methods on objects of `Vec<T>`, ye `Deref` was meant for smart pointers instead. What this impl really feels like is more akin to unsizing. Obviously the `Deref` impl cannot be revoked from `Vec<T>` anymore, but assuming an unsizing impl would've been the proper call this would then also imply that unsizing would have to be introduced into autoderef (instead of just special casing array unsizing).
-
 What follows here is the accompanied pre-RFC:
 
 # RFC
@@ -405,13 +402,16 @@ The first issue is only of concern with the proposed design here, while the seco
 - This proposal allows for some non-sensical `CoerceUnsized` implementations resulting in odd unsizing coercions (think implicit casts where no actual "unsizing" happens), though the restrictions on the `CoerceUnsized` trait try to limit them (for the time being).
   - This includes implementations that may allocate
 - Unsizing coercions are now able to run arbitrary user code, placing it into a similar category to `Deref` in that regard, effectively adding yet more user facing \*magic\* to the language.
-- The `Unsize` trait now depends on the `Pointee` trait which means any push for stabilization will depend on the stabilization of said trait.
+- This proposal relies on the `ptr_metadata` feature (the `Pointee` trait to be specific), which is unlikely to stabilize soon and as such would push stabilization of this feature back as well
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
 - As was discussed in the custom reborrows issue, we could make `CoerceUnsized` represent a more general user controlled `Coerce` mechanism.
 - This proposal is forwards compatible with exposing more dynamic unsizing behavior in the future, where for example the metadata is read from a field of the source type. To support that, a new trait `DynamicUnsize` could be introduced as the supertrait of `Unsize`, exposing the needed functions to extract the metadata. Then a blanket impl can be provided that implements `DynamicUnsize` for anything implementing `Unsize` with delegating the metadata extraction functions to the `Unsize` impl. The reason for why such a split would be necessary is that not all coercions can read from the source object (raw pointer unsizing for example), so there needs to be a way to differentiate on the trait bounds for the corresponding `CoerceUnsized` implementations.
+- It would be possible to partially stabilize things in this RFC without being blocked on the `ptr_metadata` features. `CoerceUnsized` could be stabilized on its own, allowing delegating impls that only depend on existing `CoerceUnsized` implementations. As such, most custom smart pointers could delegate to `*mut T: CoerceUnsized<*mut U>` impls which would cover a lot of cases already as `Unsize` itself isn't really too useful currently due to custom dynamically sized types not being a thing yet.
+
+- Introduce a `Pointer` trait that allows disassembling into and assembling from raw parts. This would allow simplifying most implementations of `CoerceUnsized`, as the usual impl is doing just that, disassembling, coercing the metadata and then re-assembling.
 
 # Prior art
 [prior-art]: #prior-art
@@ -419,6 +419,8 @@ The first issue is only of concern with the proposed design here, while the seco
 There is [another Pre-RFC that tries to improve Unsizing](https://internals.rust-lang.org/t/pre-rfc-improved-unsizing/16861).
 It does so by just allowing more impls of the current traits, while restricting them by taking visibilities of fields into account which complicates the traits in a (subjectively to the author) confusing way.
 And while the RFC makes the traits more flexible, it does not offer the same flexibility that this proposal offers.
+
+- Prior art with librarification (but relying on compiler impl details to shim `<*T>::with_metadata_of`): https://crates.io/crates/unsize
 
 
 # Unresolved questions
@@ -429,7 +431,8 @@ And while the RFC makes the traits more flexible, it does not offer the same fle
     1. Is this problematic?
     2. Should they be overridable?
 3. Will this design prevent any scenarios from being ever supported?
-4. As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
+4. This proposal allows multiple `CoerceUnsized` impls for a given type (as long as they don't overlap as usual), which might allow for multiple applicable unsizing coercions for certain scenarios?
+5. As usual, naming. Given we might want to introduce multiple unsize traits for certain requirements, should the proposed trait stick to `Unsize` or something more specific like `FromMetadataUnsize`?
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
